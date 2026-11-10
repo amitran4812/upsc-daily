@@ -233,3 +233,18 @@ body.signed-out .shell { display: none; }
 .brief .mark { font-size: 18px; min-height: 30px; }
 .lanlinks { display: flex; flex-wrap: wrap; gap: 10px; }
 .lan { font: 600 20px Inter, sans-serif; background: var(--accent-soft); padding: 8px 14px; border-radius: 10px; }
+
+/* ---------- app feel ---------- */
+.install-banner { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 15; width: min(620px, calc(100vw - 32px));
+  display: flex; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); }
+.install-banner img { width: 44px; height: 44px; border-radius: 10px; }
+.install-banner div { flex: 1; display: grid; }
+.install-banner span { font-size: 13px; color: var(--muted); }
+.install-banner .x { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 6px; }
+@media (min-width: 1101px) { .install-banner { bottom: 24px; } }
+@media (display-mode: standalone) {
+  .top { padding-top: calc(10px + env(safe-area-inset-top)); }
+  #installBtn, .install-banner { display: none !important; }
+}
+html { -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior-y: contain; }

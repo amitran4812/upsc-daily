@@ -61,7 +61,8 @@ def main():
     (SITE / "index.html").write_text(html, encoding="utf-8")
     man = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     man.update(start_url="./#/today", scope="./")
-    for i in man["icons"]:
+    man["id"] = "./"
+    for i in man["icons"] + man.get("screenshots", []):
         i["src"] = i["src"].lstrip("/")
     write(SITE / "manifest.webmanifest", man)
     sw = (STATIC / "sw.js").read_text(encoding="utf-8")

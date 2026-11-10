@@ -390,8 +390,18 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && ov
 
 // ---------- PWA install ----------
 let deferredInstall = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; $("#installBtn").hidden = false; });
-$("#installBtn").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; };
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault(); deferredInstall = e; $("#installBtn").hidden = false;
+  if (!$("#installBanner")) {
+    const b = document.createElement("div"); b.id = "installBanner"; b.className = "install-banner";
+    b.innerHTML = `<img src="${STATIC ? "static" : "/static"}/icon-192.png" alt=""><div><b>Install UPSC Daily as an app</b><span>Opens full screen from your home screen and app drawer, like any Android app.</span></div><button class="btn primary">Install</button><button class="x" aria-label="Close">✕</button>`;
+    b.querySelector(".btn").onclick = () => $("#installBtn").click();
+    b.querySelector(".x").onclick = () => b.remove();
+    document.body.appendChild(b);
+  }
+});
+window.addEventListener("appinstalled", () => { $("#installBanner")?.remove(); $("#installBtn").hidden = true; toast("Installed. Open UPSC Daily from your home screen."); });
+$("#installBtn").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; $("#installBanner")?.remove(); };
 if ("serviceWorker" in navigator) navigator.serviceWorker.register(STATIC ? "sw.js" : "/sw.js").catch(() => {});
 
 // ---------- Boot ----------

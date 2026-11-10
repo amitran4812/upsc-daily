@@ -47,10 +47,8 @@ echo  Installing components...
 
 rem ---- 4. Start with Windows (hidden, no window) ------------------------
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-> "%STARTUP%\UPSC Daily.vbs" (
-  echo Set sh = CreateObject("WScript.Shell"^)
-  echo sh.Run """%DEST%\.venv\Scripts\pythonw.exe"" ""%DEST%\windows\launcher.pyw""", 0, False
-)
+del "%STARTUP%\UPSC Daily.vbs" 2>nul
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:APPDATA+'\Microsoft\Windows\Start Menu\Programs\Startup\UPSC Daily.lnk'); $s.TargetPath='%DEST%\.venv\Scripts\pythonw.exe'; $s.Arguments='\"%DEST%\windows\launcher.pyw\"'; $s.WorkingDirectory='%DEST%'; $s.WindowStyle=7; $s.Save()"
 rem Desktop shortcut that opens the portal in the browser
 > "%USERPROFILE%\Desktop\UPSC Daily.url" (
   echo [InternetShortcut]
@@ -64,7 +62,7 @@ echo  Allowing the tablet to connect over home Wi-Fi (Windows may ask for permis
 powershell -NoProfile -Command "Start-Process netsh -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList 'advfirewall firewall delete rule name=\"UPSC Daily\"' ; Start-Process netsh -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList 'advfirewall firewall add rule name=\"UPSC Daily\" dir=in action=allow protocol=TCP localport=%PORT% profile=private'" 2>nul
 
 rem ---- 6. Start it now ----------------------------------------------------
-wscript "%STARTUP%\UPSC Daily.vbs"
+start "" "%DEST%\.venv\Scripts\pythonw.exe" "%DEST%\windows\launcher.pyw"
 timeout /t 6 /nobreak >nul
 start "" "http://localhost:%PORT%/"
 
