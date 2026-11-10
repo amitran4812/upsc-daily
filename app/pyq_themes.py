@@ -154,7 +154,13 @@ TOPICS = [
 NOISE = ["cricket", "ipl", "bollywood", "box office", "film review", "actor", "actress",
          "celebrity", "murder", "arrested for", "police said", "accident", "horoscope",
          "rally", "campaign trail", "fixture", "match report", "trailer", "web series",
-         "stabbed", "robbery", "gold rate", "petrol price today"]
+         "stabbed", "robbery", "gold rate", "petrol price today",
+         # podcasts, videos and book excerpts
+         "| health wrap", " ep. ", "podcast", "| watch", "video:", "excerpt from", "in focus podcast",
+         # party politics and local administration (rarely UPSC material)
+         "ysrcp", "tdp ", "bjp ", "congress leader", "aap ", "dmk ", "aiadmk", "brs ", "trinamool",
+         "leader criticises", "slams", "hits out", "lashes out", "says collector", "collector says",
+         "mla ", "corporator", "money order"]
 
 PAPER_LABELS = {
     "GS1": "GS Paper I: Heritage, Culture, History, Geography & Society",

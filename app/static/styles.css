@@ -248,3 +248,7 @@ body.signed-out .shell { display: none; }
 }
 html { -webkit-tap-highlight-color: transparent; }
 body { overscroll-behavior-y: contain; }
+
+.upd { position: relative; }
+.upd.has-update { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.upd-dot { position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }

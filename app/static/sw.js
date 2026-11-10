@@ -1,5 +1,5 @@
 // Service worker: cache the app shell, keep news fresh (network first), open links from notifications.
-const SHELL = "upsc-shell-v1";
+const SHELL = "upsc-shell-__VERSION__";
 const ASSETS = ["/", "/static/styles.css", "/static/app.js", "/static/icon-192.png", "/manifest.webmanifest"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => {

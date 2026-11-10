@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from . import db
@@ -449,10 +449,28 @@ def test_ai(u=Depends(require_user)):
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+def app_version():
+    h = hashlib.sha256()
+    for f in sorted(STATIC.iterdir()):
+        if f.is_file():
+            h.update(f.name.encode()); h.update(f.read_bytes())
+    return h.hexdigest()[:12]
+
+
+_STARTED = date.today().isoformat()
+
+
+@app.get("/version.json")
+def version():
+    return Response(json.dumps({"app": app_version(), "built_at": _STARTED}), media_type="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.get("/sw.js")
 def sw():
-    return FileResponse(STATIC / "sw.js", media_type="application/javascript",
-                        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+    body = (STATIC / "sw.js").read_text(encoding="utf-8").replace("__VERSION__", app_version())
+    return Response(body, media_type="application/javascript",
+                    headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
 @app.get("/manifest.webmanifest")

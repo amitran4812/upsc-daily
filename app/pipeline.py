@@ -1,11 +1,12 @@
 """Daily pipeline: fetch -> classify -> notes -> PDF -> notify."""
 import json
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from . import db
 from .ai import ai_notes, merge_notes, server_settings
 from .classifier import classify
-from .config import MAX_ITEMS_PER_DAY, MIN_RELEVANCE, TIMEZONE
+from .config import (MAX_ITEMS_PER_DAY, MAX_PER_HINDU_SECTION, MAX_PIB_PER_DAY,
+                     MIN_RELEVANCE, TIMEZONE)
 from .fetcher import fetch_all
 from .notes import rule_notes
 from .pdfgen import build_pdf
@@ -41,6 +42,16 @@ def rank_importance(day):
             c.execute("UPDATE items SET importance=? WHERE id=?", (imp, i["id"]))
 
 
+def _stale(published, day, max_days=2):
+    """Feeds also carry older stories; keep only the last couple of days."""
+    if not published:
+        return False
+    try:
+        return (date.fromisoformat(day) - datetime.fromisoformat(published).date()).days > max_days
+    except ValueError:
+        return False
+
+
 def run_daily(day=None, get=None, feeds=None, fetch=True):
     day = day or today()
     log = []
@@ -49,7 +60,7 @@ def run_daily(day=None, get=None, feeds=None, fetch=True):
         known = {r[0] for r in c.execute("SELECT link FROM items").fetchall()}
     fresh = []
     for it in raw:
-        if it["link"] in known:
+        if it["link"] in known or _stale(it.get("published"), day):
             continue
         cl = classify(it["title"], it["excerpt"], it["section"], it["source"])
         if cl["score"] < MIN_RELEVANCE or not cl["topics"]:
@@ -57,7 +68,15 @@ def run_daily(day=None, get=None, feeds=None, fetch=True):
         it.update(cl)
         fresh.append(it)
     fresh.sort(key=lambda x: -x["score"])
-    fresh = fresh[:MAX_ITEMS_PER_DAY]
+    pib = [i for i in fresh if i["source"] == "PIB"][:MAX_PIB_PER_DAY]
+    per_section, hindu = {}, []
+    for i in fresh:
+        if i["source"] != "PIB" and per_section.get(i["section"], 0) < MAX_PER_HINDU_SECTION:
+            per_section[i["section"]] = per_section.get(i["section"], 0) + 1
+            hindu.append(i)
+    fresh = sorted(pib + hindu[: MAX_ITEMS_PER_DAY - len(pib)], key=lambda x: -x["score"])
+    log.append(f"PIB: {len([r for r in raw if r['source'] == 'PIB'])} fetched, {len(pib)} kept "
+               f"(PIB items with no excerpt: {sum(1 for r in raw if r['source'] == 'PIB' and not r['excerpt'])})")
     if fetch:
         log.append(f"{len(raw)} fetched, {len(fresh)} new UPSC-relevant items kept")
     else:

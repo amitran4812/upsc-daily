@@ -46,3 +46,5 @@ FEEDS = [
 MAX_EXCERPT_CHARS = 420        # short excerpt only
 MIN_RELEVANCE = 2.0            # items below this score are dropped
 MAX_ITEMS_PER_DAY = 60
+MAX_PIB_PER_DAY = 25          # PIB is a core source, so it gets its own quota
+MAX_PER_HINDU_SECTION = 7     # stop one section (e.g. Science) crowding out the rest

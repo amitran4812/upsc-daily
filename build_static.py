@@ -74,7 +74,15 @@ def main():
             .replace('caches.match("/")', 'caches.match("./")')
             .replace('const link = "/" + (e.notification.data?.link || "#/today");',
                      'const link = self.registration.scope + (e.notification.data?.link || "#/today");'))
+    import hashlib
+    h = hashlib.sha256()
+    for f in sorted(STATIC.iterdir()):
+        if f.is_file():
+            h.update(f.name.encode()); h.update(f.read_bytes())
+    ver = h.hexdigest()[:12]
+    sw = sw.replace("__VERSION__", ver)
     (SITE / "sw.js").write_text(sw, encoding="utf-8")
+    write(SITE / "version.json", {"app": ver, "built_at": datetime.now().isoformat(timespec="minutes")})
     (SITE / ".nojekyll").write_text("")
 
     # ---- data ----

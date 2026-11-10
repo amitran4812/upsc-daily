@@ -315,6 +315,8 @@ async function viewSettings() {
     <div class="row-btns"><button class="btn primary" id="save">Save</button><button class="btn" id="test">Test connection</button></div>
     <div id="msg" class="small"></div>
   </div>
+  <h2 class="h2s">App version</h2>
+  <div class="card form"><p style="margin:0">Version <b id="verLbl">…</b>. The app checks for updates by itself; you can also tap <b>⟳ Check for updates</b> at the top right any time.</p></div>
   <h2 class="h2s">Notifications</h2>
   <div class="card form"><p style="margin:0">Get a notification on this device when the daily PDF or the monthly quiz is ready.</p>
     <div><button class="btn" id="perm">${"Notification" in window && Notification.permission === "granted" ? "Notifications are on ✓" : "Turn on notifications"}</button></div>
@@ -327,6 +329,7 @@ async function viewSettings() {
   <div class="card form"><p style="margin:0">Signed in as <b>${esc(overview?.user?.username || "")}</b>. Sign in with the same username and password on any device to see your saved notes, quiz scores and AI settings.</p>
     <div><button class="btn" id="logout">Sign out</button></div></div>`}`;
   if (!STATIC) api("/api/lan").then((r) => { $("#lan").innerHTML = r.links.length ? r.links.map((l) => `<a href="${esc(l)}" class="lan">${esc(l)}</a>`).join("") : "Not available"; }).catch(() => {});
+  fetchVersion().then((v) => { $("#verLbl").textContent = `${v.app.slice(0, 7)} (${v.built_at.slice(0, 10)})`; }).catch(() => { $("#verLbl").textContent = bootVersion?.slice(0, 7) || "—"; });
   let provider = s.provider;
   $("#prov").onclick = (e) => {
     const b = e.target.closest(".chip"); if (!b) return; provider = b.dataset.v;
@@ -404,6 +407,45 @@ window.addEventListener("appinstalled", () => { $("#installBanner")?.remove(); $
 $("#installBtn").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; $("#installBanner")?.remove(); };
 if ("serviceWorker" in navigator) navigator.serviceWorker.register(STATIC ? "sw.js" : "/sw.js").catch(() => {});
 
+// ---------- Updates ----------
+const VERSION_URL = STATIC ? "version.json" : "/version.json";
+let bootVersion = null, latestVersion = null;
+async function fetchVersion() {
+  const r = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: "no-store" });
+  if (!r.ok) throw new Error("offline");
+  return r.json();
+}
+function markUpdate(available) {
+  $("#updateBtn .upd-dot").hidden = !available;
+  $("#updateBtn").classList.toggle("has-update", available);
+  $("#updateBtn .lbl-sm").textContent = available ? " Update available" : " Check for updates";
+}
+async function applyUpdate() {
+  toast("Updating the app…");
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.update();
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k.startsWith("upsc-shell")).map((k) => caches.delete(k)));
+  } catch {}
+  setTimeout(() => location.reload(), 400);
+}
+async function checkForUpdates(manual) {
+  try {
+    const v = await fetchVersion();
+    bootVersion ??= v.app;
+    latestVersion = v.app;
+    const available = latestVersion !== bootVersion;
+    markUpdate(available);
+    if (manual) {
+      if (available) applyUpdate();
+      else { await loadOverview(); route(); refreshNotifs(); toast(`You have the latest version (${v.app.slice(0, 7)}). News refreshed.`); }
+    } else if (available) toast("A new version of UPSC Daily is available. Tap ⟳ to update.", 6000);
+  } catch { if (manual) toast("Can't check right now. Are you online?"); }
+}
+$("#updateBtn").onclick = () => checkForUpdates(true);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkForUpdates(false); });
+
 // ---------- Boot ----------
 let started = false;
 async function start() {
@@ -412,7 +454,8 @@ async function start() {
   if (!me) return showAuth();
   await loadOverview(); route(); refreshNotifs();
   if (overview.running) poll();
-  if (!started) { started = true; setInterval(refreshNotifs, 60000); setInterval(loadOverview, 120000); }
+  checkForUpdates(false);
+  if (!started) { started = true; setInterval(() => checkForUpdates(false), 30 * 60000); setInterval(refreshNotifs, 60000); setInterval(loadOverview, 120000); }
 }
 setupAuth();
 start();
