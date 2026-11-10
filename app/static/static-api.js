@@ -9,7 +9,10 @@
   };
   const ls = {
     get(k, d) { try { const v = localStorage.getItem("upsc:" + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-    set(k, v) { try { localStorage.setItem("upsc:" + k, JSON.stringify(v)); } catch {} },
+    set(k, v) {
+      try { localStorage.setItem("upsc:" + k, JSON.stringify(v)); } catch {}
+      if (window.SYNC?.SYNCED.includes(k)) window.SYNC.push();
+    },
   };
   const cache = {};
   async function json(path, fresh = false) {

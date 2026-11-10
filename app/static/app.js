@@ -315,6 +315,8 @@ async function viewSettings() {
     <div class="row-btns"><button class="btn primary" id="save">Save</button><button class="btn" id="test">Test connection</button></div>
     <div id="msg" class="small"></div>
   </div>
+  ${STATIC && window.SYNC?.state.enabled ? `<h2 class="h2s">Sync across devices</h2>
+  <div class="card form" id="syncCard"></div>` : ""}
   <h2 class="h2s">App version</h2>
   <div class="card form"><p style="margin:0">Version <b id="verLbl">…</b>. The app checks for updates by itself; you can also tap <b>⟳ Check for updates</b> at the top right any time.</p></div>
   <h2 class="h2s">Notifications</h2>
@@ -330,6 +332,7 @@ async function viewSettings() {
     <div><button class="btn" id="logout">Sign out</button></div></div>`}`;
   if (!STATIC) api("/api/lan").then((r) => { $("#lan").innerHTML = r.links.length ? r.links.map((l) => `<a href="${esc(l)}" class="lan">${esc(l)}</a>`).join("") : "Not available"; }).catch(() => {});
   fetchVersion().then((v) => { $("#verLbl").textContent = `${v.app.slice(0, 7)} (${v.built_at.slice(0, 10)})`; }).catch(() => { $("#verLbl").textContent = bootVersion?.slice(0, 7) || "—"; });
+  if ($("#syncCard")) window.SYNC.onChange(drawSyncCard);
   let provider = s.provider;
   $("#prov").onclick = (e) => {
     const b = e.target.closest(".chip"); if (!b) return; provider = b.dataset.v;
@@ -406,6 +409,24 @@ window.addEventListener("beforeinstallprompt", (e) => {
 window.addEventListener("appinstalled", () => { $("#installBanner")?.remove(); $("#installBtn").hidden = true; toast("Installed. Open UPSC Daily from your home screen."); });
 $("#installBtn").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; $("#installBanner")?.remove(); };
 if ("serviceWorker" in navigator) navigator.serviceWorker.register(STATIC ? "sw.js" : "/sw.js").catch(() => {});
+
+// ---------- Sync (static build) ----------
+function drawSyncCard(st) {
+  const el = $("#syncCard"); if (!el || !document.body.contains(el)) return;
+  if (!st.ready) { el.innerHTML = `<p class="muted" style="margin:0">Connecting…</p>`; return; }
+  el.innerHTML = st.user
+    ? `<p style="margin:0">Signed in as <b>${esc(st.user.name || st.user.email)}</b> (${esc(st.user.email || "")}). Saved items, quiz scores and AI settings sync to every phone and tablet where you sign in with this Google account.</p>
+       <div><button class="btn" id="syncOut">Sign out</button></div>`
+    : `<p style="margin:0">Sign in with Google to keep saved items, quiz scores and your AI key the same on your phone and tablet.</p>
+       <div><button class="btn primary" id="syncIn">Sign in with Google</button></div>`;
+  if (st.error) el.innerHTML += `<p class="small" style="color:var(--bad);margin:0">${esc(st.error)}</p>`;
+  $("#syncIn")?.addEventListener("click", async () => { try { await window.SYNC.signIn(); toast("Signed in. Your data now syncs."); } catch (e) { toast("Sign-in failed: " + e.message, 6000); } });
+  $("#syncOut")?.addEventListener("click", async () => { await window.SYNC.signOut(); toast("Signed out"); });
+}
+if (STATIC && window.SYNC?.state.enabled) {
+  window.SYNC.onChange((st) => { const w = $("#who"); if (w) { w.textContent = st.user ? (st.user.name || st.user.email || "").split(" ")[0] : "Sign in"; } });
+  window.addEventListener("upsc-synced", () => { const h = location.hash; if (h.startsWith("#/saved") || h.startsWith("#/quiz") || h === "" || h.startsWith("#/today")) route(); });
+}
 
 // ---------- Updates ----------
 const VERSION_URL = STATIC ? "version.json" : "/version.json";

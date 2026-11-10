@@ -57,6 +57,7 @@ def main():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = html.replace('"/static/', '"static/').replace('href="/manifest.webmanifest"', 'href="manifest.webmanifest"')
     html = html.replace('<script src="static/app.js"></script>',
+                        '<script src="static/firebase-config.js"></script>\n<script src="static/sync.js"></script>\n'
                         '<script src="static/static-api.js"></script>\n<script src="static/app.js"></script>')
     (SITE / "index.html").write_text(html, encoding="utf-8")
     man = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
@@ -67,7 +68,7 @@ def main():
     write(SITE / "manifest.webmanifest", man)
     sw = (STATIC / "sw.js").read_text(encoding="utf-8")
     sw = (sw.replace('["/", "/static/styles.css", "/static/app.js", "/static/icon-192.png", "/manifest.webmanifest"]',
-                     '["./", "static/styles.css", "static/app.js", "static/static-api.js", "static/icon-192.png", "manifest.webmanifest"]')
+                     '["./", "static/styles.css", "static/app.js", "static/static-api.js", "static/sync.js", "static/firebase-config.js", "static/icon-192.png", "manifest.webmanifest"]')
             .replace('url.pathname.startsWith("/api/pdf/")', 'url.pathname.includes("/pdfs/")')
             .replace('url.pathname.startsWith("/api/")', 'url.pathname.includes("/data/")')
             .replace('(url.pathname.startsWith("/api/day/") || url.pathname === "/api/overview")', 'true')
