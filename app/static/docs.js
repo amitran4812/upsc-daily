@@ -9,7 +9,7 @@
     mammoth: "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js",
   };
   const MAX_MB = 15;
-  const DEFAULT_MODEL = { claude: "claude-haiku-5-5", gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini" };
+  const DEFAULT_MODEL = { claude: "claude-haiku-5-5", gemini: "gemini-flash-latest", openai: "gpt-4.1-mini" };
   const LABEL = { claude: "Claude", gemini: "Gemini", openai: "ChatGPT", none: "built-in reader (no AI)" };
   const ls = {
     get: (k, d) => { try { const v = localStorage.getItem("upsc:" + k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -100,12 +100,9 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     let r;
     if (ai.p === "gemini") {
       const parts = useBinary ? [{ inline_data: { mime_type: mime, data: toB64(buf) } }, { text: PROMPT }] : [{ text: textPart }];
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${ai.model}:generateContent`, { method: "POST",
-        headers: { "x-goog-api-key": ai.key, "content-type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { maxOutputTokens: maxTokens, responseMimeType: "application/json" } }) });
-      if (!r.ok) throw new Error(`Gemini: ${r.status} ${(await r.text()).slice(0, 200)}`);
-      const c = (await r.json()).candidates || [];
-      return c.length ? c[0].content.parts.map((x) => x.text || "").join("") : "";
+      const j = await window.UPSC_GEMINI.generate(ls.get("settings", {}), { contents: [{ parts }], generationConfig: { maxOutputTokens: 16384, responseMimeType: "application/json" } });
+      const c = j.candidates || [];
+      return c.length && c[0].content ? (c[0].content.parts || []).map((x) => x.text || "").join("") : "";
     }
     if (ai.p === "claude") {
       const content = useBinary

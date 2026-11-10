@@ -5,7 +5,7 @@ import httpx
 PROVIDERS = {
     "claude": {"label": "Claude (Anthropic)", "model": "claude-haiku-5-5",
                "key_hint": "console.anthropic.com → API keys"},
-    "gemini": {"label": "Gemini (Google)", "model": "gemini-2.5-flash",
+    "gemini": {"label": "Gemini (Google)", "model": "gemini-flash-latest",
                "key_hint": "aistudio.google.com → Get API key (free tier available)"},
     "openai": {"label": "ChatGPT (OpenAI)", "model": "gpt-4.1-mini",
                "key_hint": "platform.openai.com → API keys"},
@@ -49,15 +49,38 @@ def complete(prompt, settings, max_tokens=4096):
                   "messages": [{"role": "user", "content": prompt}]})
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"] or ""
-    r = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        timeout=180, headers={"x-goog-api-key": key, "content-type": "application/json"},
-        json={"contents": [{"parts": [{"text": prompt}]}],
-              "generationConfig": {"maxOutputTokens": max_tokens,
-                                   "responseMimeType": "application/json"}})
-    r.raise_for_status()
+    body = {"contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max(max_tokens, 8192), "responseMimeType": "application/json"}}
+    go = lambda m: httpx.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                              timeout=180, headers={"x-goog-api-key": key, "content-type": "application/json"}, json=body)
+    r = go(model)
+    if r.status_code in (400, 404):            # model retired: switch to the newest Flash model this key can use
+        pick = best_gemini(key)
+        if pick and pick != model:
+            r = go(pick)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Gemini {r.status_code}: {r.text[:500]}")
     cands = r.json().get("candidates", [])
-    return "".join(x.get("text", "") for x in cands[0]["content"]["parts"]) if cands else ""
+    return "".join(x.get("text", "") for x in cands[0].get("content", {}).get("parts", [])) if cands else ""
+
+
+def best_gemini(key):
+    try:
+        r = httpx.get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000",
+                      headers={"x-goog-api-key": key}, timeout=30)
+        names = [m["name"].split("/", 1)[-1] for m in r.json().get("models", [])
+                 if "generateContent" in m.get("supportedGenerationMethods", [])]
+    except Exception:
+        return None
+    if "gemini-flash-latest" in names:
+        return "gemini-flash-latest"
+    bad = re.compile(r"(image|tts|audio|live|embed|vision|robotics|computer|exp|learnlm|gemma|nano|customtools)")
+
+    def rank(n):
+        m = re.search(r"gemini-(\d+(?:\.\d+)?)", n)
+        return (float(m.group(1)) if m else 0) * 10 - ("preview" in n) - 4 * ("lite" in n) - 2 * ("pro" in n)
+    ok = sorted((n for n in names if n.startswith("gemini-") and not bad.search(n)), key=rank, reverse=True)
+    return next((n for n in ok if "flash" in n), ok[0] if ok else None)
 
 
 def parse_json(text):
@@ -86,6 +109,14 @@ Return ONLY a JSON array, one object per item, with keys:
             of a place, institution, law, constitutional article, species, scheme or concept in the
             news (e.g. a strait's location, which body publishes a report). Only facts you are sure of;
             otherwise [].
+  "analysis": for Medium/High items, {"why": 1-2 sentences on why this news matters for India and
+            for the UPSC aspirant, "angles": 2-4 objects {"dim": one of "International relations",
+            "Internal security", "Economy", "Governance & polity", "Environment", "Society",
+            "Science & tech", "Ethics", "Geography & disasters", "point": the specific implication for
+            India in that dimension, 1-2 sentences}}. Example: for a request to extradite a former
+            leader of Bangladesh, cover India–Bangladesh ties (IR), border management, illegal migration
+            and North-East insurgent groups (Internal security), and the Extradition Act 1962 /
+            political-offence exception (Governance). For Low items use null.
 Avoid filler. Leave a field empty rather than writing something generic.
 
 Items:
@@ -120,6 +151,12 @@ def merge_notes(base, a):
     n = dict(base)
     if isinstance(a.get("static"), list) and a["static"]:
         n["static"] = [x for x in a["static"] if isinstance(x, dict) and x.get("title")][:2] or n.get("static", [])
+    an = a.get("analysis")
+    if isinstance(an, dict) and isinstance(an.get("angles"), list):
+        angles = [x for x in an["angles"] if isinstance(x, dict) and x.get("point")][:4]
+        if angles:
+            n["analysis"] = {"why": str(an.get("why") or ""), "angles": angles,
+                             "themes": (base.get("analysis") or {}).get("themes", [])}
     for k in ("summary", "prelims", "mains"):
         if k in a:
             n[k] = a[k] or ([] if k != "mains" else "")

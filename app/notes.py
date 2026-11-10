@@ -1,6 +1,7 @@
 """Rule-based notes used when no AI key is configured (or as a fallback)."""
 import re
 from .static_facts import static_connect
+from .analysis import india_angles
 
 
 
@@ -40,6 +41,9 @@ def rule_notes(item):
         return n                      # low-priority news: headline + summary only, no filler
     if facts:
         n["prelims"] = facts[:2]
+    an = india_angles(item["title"], item["excerpt"])
+    if an:
+        n["analysis"] = an
     # No templated Mains lines or practice questions here: those are written only by AI,
     # and only where the item is genuinely exam-important (see ai.NOTES_PROMPT).
     return n

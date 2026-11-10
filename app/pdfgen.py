@@ -61,6 +61,18 @@ def source_para(it):
                      S["meta"])
 
 
+def analysis_block(n):
+    an = n.get("analysis") or {}
+    if not an.get("angles"):
+        return []
+    out = [_p("Why it matters for India and UPSC", "label")]
+    if an.get("why"):
+        out.append(_p(an["why"]))
+    for a in an["angles"]:
+        out.append(Paragraph(f"• <b>{escape(str(a.get('dim', '')))}:</b> {escape(str(a.get('point', '')))}", S["body"]))
+    return out
+
+
 def build_pdf(day: str, items: list, out_dir=None) -> str:
     out_dir = out_dir or PDF_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +131,7 @@ def build_pdf(day: str, items: list, out_dir=None) -> str:
                         f"{', '.join(it['topics'])}", "meta")]
             if n.get("summary"):
                 block += _bullets(n["summary"] if isinstance(n["summary"], list) else [n["summary"]])
+            block += analysis_block(n)
             if n.get("prelims"):
                 block.append(_p("Prelims pointers", "label"))
                 block += _bullets(n["prelims"] if isinstance(n["prelims"], list) else [n["prelims"]])

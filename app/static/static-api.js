@@ -4,7 +4,7 @@
 (() => {
   const PROVIDERS = {
     claude: { label: "Claude (Anthropic)", model: "claude-haiku-5-5", key_hint: "console.anthropic.com → API keys" },
-    gemini: { label: "Gemini (Google)", model: "gemini-2.5-flash", key_hint: "aistudio.google.com → Get API key (free tier available)" },
+    gemini: { label: "Gemini (Google)", model: "gemini-flash-latest", key_hint: "aistudio.google.com → Get API key (free tier available)" },
     openai: { label: "ChatGPT (OpenAI)", model: "gpt-4.1-mini", key_hint: "platform.openai.com → API keys" },
   };
   const ls = {
@@ -33,6 +33,43 @@
   const mask = (k) => (k && k.length > 12 ? k.slice(0, 5) + "…" + k.slice(-4) : k ? "set" : "");
 
   // ---- AI (browser → provider) ----
+  async function errText(r) {
+    const t = await r.text();
+    try { const j = JSON.parse(t); return `${r.status} ${j.error?.message || j.message || t}`.slice(0, 600); } catch { return `${r.status} ${t.slice(0, 600)}`; }
+  }
+  // Google retires Gemini model names now and then. If the saved model is gone (404), look up
+  // the models this key can use, pick the newest regular Flash model, save it and try again.
+  async function geminiModels(key) {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
+    if (!r.ok) throw new Error(await errText(r));
+    return ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes("generateContent")).map((m) => m.name.replace(/^models\//, ""));
+  }
+  function bestGemini(names) {
+    if (names.includes("gemini-flash-latest")) return "gemini-flash-latest";
+    const bad = /(image|tts|audio|live|embed|vision|robotics|computer|exp|learnlm|gemma|nano|customtools)/;
+    const ver = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+    const rank = (n) => ver(n) * 10 - (/preview/.test(n) ? 1 : 0) - (/lite/.test(n) ? 4 : 0) - (/pro/.test(n) ? 2 : 0);
+    const ok = names.filter((n) => /^gemini-/.test(n) && !bad.test(n)).sort((a, b) => rank(b) - rank(a));
+    return ok.find((n) => /flash/.test(n)) || ok[0] || null;
+  }
+  async function geminiGenerate(s, body) {
+    const key = s.gemini_key; let model = s.gemini_model || PROVIDERS.gemini.model;
+    if (!key) throw new Error("No Gemini API key saved");
+    const go = (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST",
+      headers: { "x-goog-api-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
+    let r = await go(model);
+    if (r.status === 404 || r.status === 400) {
+      const err = await errText(r);
+      if (r.status === 400 && !/model|not found|not supported/i.test(err)) throw new Error("Gemini: " + err);
+      const pick = bestGemini(await geminiModels(key).catch(() => []));
+      if (!pick || pick === model) throw new Error("Gemini: " + err);
+      model = pick; r = await go(model);
+      if (r.ok) { const st = ls.get("settings", {}); st.gemini_model = model; ls.set("settings", st); s.gemini_model = model; }
+    }
+    if (!r.ok) throw new Error("Gemini: " + (await errText(r)));
+    const j = await r.json(); j._model = model; return j;
+  }
+  window.UPSC_GEMINI = { generate: geminiGenerate, models: geminiModels, best: bestGemini };
   async function complete(prompt, s, maxTokens = 4096) {
     const p = s.provider, key = s[p + "_key"], model = s[p + "_model"] || PROVIDERS[p].model;
     if (!key) throw new Error("No API key saved");
@@ -42,22 +79,19 @@
         "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
         "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
-      if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
+      if (!r.ok) throw new Error(await errText(r));
       return (await r.json()).content.map((b) => b.text || "").join("");
     }
     if (p === "openai") {
       r = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: {
         authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({ model, max_completion_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
-      if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
+      if (!r.ok) throw new Error(await errText(r));
       return (await r.json()).choices[0].message.content || "";
     }
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST",
-      headers: { "x-goog-api-key": key, "content-type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: maxTokens, responseMimeType: "application/json" } }) });
-    if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
-    const c = (await r.json()).candidates || [];
-    return c.length ? c[0].content.parts.map((x) => x.text || "").join("") : "";
+    const j = await geminiGenerate(s, { contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: Math.max(maxTokens, 8192), responseMimeType: "application/json" } });
+    const c = j.candidates || [];
+    return c.length && c[0].content ? (c[0].content.parts || []).map((x) => x.text || "").join("") : "";
   }
   function parseJson(t) {
     t = t.trim(); const m = t.match(/```(?:json)?\s*([\s\S]*?)```/); if (m) t = m[1];
@@ -80,6 +114,8 @@
           const note = { ...base.notes, ai: true };
           ["summary", "prelims", "mains"].forEach((k) => { if (k in a) note[k] = a[k]; });
           if (["High", "Medium", "Low"].includes(a.importance)) note.importance = a.importance;
+          if (a.analysis && Array.isArray(a.analysis.angles) && a.analysis.angles.length)
+            note.analysis = { why: a.analysis.why || "", angles: a.analysis.angles.filter((x) => x && x.point).slice(0, 4), themes: base.notes.analysis?.themes || [] };
           if (Array.isArray(a.static) && a.static.length) note.static = a.static.filter((x) => x && x.title).slice(0, 2);
           if (a.question && (note.importance || base.importance) === "High") note.question = a.question; else delete note.question;
           store[base.id] = note; n++;
@@ -141,7 +177,7 @@
     if (p === "/api/settings/test") {
       const s = ls.get("settings", { provider: "none" });
       if (!PROVIDERS[s.provider]) return { ok: false, message: "Choose Claude, Gemini or ChatGPT first." };
-      try { const o = await complete('Reply with exactly this JSON: {"ok": true}', s, 50); return { ok: true, message: `Connected. ${PROVIDERS[s.provider].label} replied: ${o.trim().slice(0, 60)}` }; }
+      try { const o = await complete('Reply with exactly this JSON: {"ok": true}', s, 1024); return { ok: true, message: `Connected. ${PROVIDERS[s.provider].label}${s.provider === "gemini" ? ` (model ${s.gemini_model || PROVIDERS.gemini.model})` : ""} replied: ${o.trim().slice(0, 60)}` }; }
       catch (e) { return { ok: false, message: "Could not connect: " + e.message }; }
     }
     if (p === "/api/ai/notes") { if (aiStatus === "running") return { started: false, message: "Already working on it." }; aiNotes(body.day); return { started: true }; }

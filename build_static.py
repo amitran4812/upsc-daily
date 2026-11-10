@@ -47,15 +47,22 @@ def main():
     if not has_quiz:
         print(generate_quiz(prev_month()))
 
-    # backfill "Static connect" for recent items written before that feature existed
+    # backfill "Static connect" and "Why it matters" for recent items written before those features
     from app.static_facts import static_connect
+    from app.analysis import india_angles
     with db.conn() as c:
         rows = c.execute("SELECT id,title,excerpt,notes,importance FROM items WHERE day >= ?",
-                         ((date.today() - timedelta(days=3)).isoformat(),)).fetchall()
+                         ((date.today() - timedelta(days=8)).isoformat(),)).fetchall()
         for r in rows:
             n = json.loads(r["notes"] or "{}")
+            changed = False
             if "static" not in n and "summary" in n:
-                n["static"] = static_connect(f"{r['title']} {r['excerpt']}")
+                n["static"] = static_connect(f"{r['title']} {r['excerpt']}"); changed = True
+            if "analysis" not in n and "summary" in n and (n.get("importance") or r["importance"]) in ("High", "Medium"):
+                an = india_angles(r["title"], r["excerpt"])
+                if an:
+                    n["analysis"] = an; changed = True
+            if changed:
                 c.execute("UPDATE items SET notes=? WHERE id=?", (json.dumps(n), r["id"]))
 
     if SITE.exists():

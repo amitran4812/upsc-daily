@@ -94,6 +94,8 @@ const SUBJECT_META = {
 const subjIcon = (s) => (SUBJECT_META[s] || SUBJECT_META.Other)[0];
 const PAPER_NAME = { GS1: "History, Culture, Geography, Society", GS2: "Polity, Governance, IR", GS3: "Economy, Environment, S&T, Security", GS4: "Ethics", Prelims: "Prelims facts" };
 
+const DIM_ICON = { "International relations": "🌐", "Internal security": "🛡️", "Economy": "💹", "Governance & polity": "🏛️", "Environment": "🌿",
+  "Society": "👥", "Science & tech": "🔬", "Ethics": "⚖️", "Geography & disasters": "🌀" };
 function itemCard(it, showDay = false) {
   const n = it.notes || {};
   const imp = it.importance || "Low";
@@ -101,7 +103,12 @@ function itemCard(it, showDay = false) {
   const sum = Array.isArray(n.summary) ? n.summary : n.summary ? [n.summary] : [];
   const key = sum[0] || it.excerpt;
   const statics = (n.static || []).map((s) => `<div class="tile-box static"><div class="lbl">🧱 Static connect · ${esc(s.title)}</div>${list(s.facts)}${s.upsc ? `<div class="upsc">🎯 ${esc(s.upsc)}</div>` : ""}</div>`).join("");
+  const an = n.analysis && n.analysis.angles?.length ? n.analysis : null;
+  const analysis = an ? `<div class="tile-box why"><div class="lbl">🇮🇳 Why it matters for India &amp; UPSC</div>
+    ${an.why ? `<p class="why-lead">${esc(an.why)}</p>` : ""}
+    <div class="angles">${an.angles.map((a) => `<div class="angle"><span class="dim" data-dim="${esc(a.dim)}">${DIM_ICON[a.dim] || "•"} ${esc(a.dim)}</span><span>${esc(a.point)}</span></div>`).join("")}</div></div>` : "";
   const boxes = [
+    analysis,
     statics,
     n.prelims?.length ? `<div class="tile-box pre"><div class="lbl">📝 Prelims pointers</div>${list(n.prelims)}</div>` : "",
     n.mains ? `<div class="tile-box mains"><div class="lbl">✍️ Mains angle</div><p>${esc(n.mains)}</p></div>` : "",
