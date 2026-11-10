@@ -142,6 +142,8 @@
       const id = +p.split("/").pop(); const m = new Set(ls.get("bookmarks", []));
       const on = !m.has(id); on ? m.add(id) : m.delete(id); ls.set("bookmarks", [...m]); return { bookmarked: on };
     }
+    if (p === "/api/weekly") return (await json("data/weekly.json", true)) || [];
+    if (p.startsWith("/api/week/")) return await json(`data/week/${p.split("/").pop()}.json`, true);
     if (p === "/api/quizzes") {
       const best = ls.get("quiz_best", {});
       return ((await json("data/quizzes.json", true)) || []).map((x) => ({ ...x, best: best[x.month] || null }));

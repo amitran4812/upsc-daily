@@ -381,3 +381,27 @@ body { overscroll-behavior-y: contain; }
 .angle { display: grid; grid-template-columns: 190px 1fr; gap: 10px; align-items: start; }
 .angle .dim { font-size: 12px; font-weight: 700; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; justify-self: start; }
 @media (max-width: 640px) { .angle { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---------- Weekly report ---------- */
+.week-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 4px 0 8px; }
+.week-banner { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius); color: var(--ink);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.week-banner:hover { text-decoration: none; border-color: var(--accent); }
+.week-banner > span:nth-child(2) { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.wb-ico { font-size: 28px; } .wb-go { color: var(--accent); font-weight: 700; font-size: 14px; white-space: nowrap; }
+.dimbars { display: grid; gap: 7px; margin-top: 8px; }
+.dimbar { display: grid; grid-template-columns: 170px 1fr 28px; align-items: center; gap: 8px; font-size: 13px; }
+.dimbar i { height: 10px; border-radius: 99px; background: var(--accent); display: block; min-width: 6px; }
+.dimbar b { text-align: right; }
+.week-brief { margin-bottom: 18px; } .week-brief h2 { margin-top: 0; }
+.wk-subj { margin-bottom: 12px; } .wk-subj h3 { margin: 0 0 6px; }
+.wk-item { padding: 10px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.wk-item p { margin: 2px 0 0; font-size: 14px; }
+.wk-why { display: flex; flex-direction: column; gap: 3px; font-size: 13px; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; margin-top: 4px; }
+@media (max-width: 640px) { .dimbar { grid-template-columns: 130px 1fr 24px; } }
+.dz-status.ready { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); padding: 16px; }
+.ready-file { display: flex; gap: 12px; align-items: center; }
+.ready-file > span:last-child { display: flex; flex-direction: column; }
+.btn.big { padding: 11px 22px; font-size: 16px; font-weight: 700; }
+.rel-card h2 { display: flex; align-items: center; gap: 10px; }
+.rel-card .tile-box.why { margin-top: 10px; }

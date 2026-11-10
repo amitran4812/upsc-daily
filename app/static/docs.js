@@ -83,13 +83,15 @@ Return ONLY JSON with this shape:
 {"title": "short title of the document",
  "doc_type": "e.g. Government report, Budget speech, Bill, Article, Notes, Judgment",
  "summary": "a clear summary in 6 to 10 sentences, simple English",
+ "relevance": {"level": "High|Medium|Low", "papers": ["GS2","GS3"], "why": "2-3 sentences: how relevant this document is for UPSC CSE and which syllabus topics it serves"},
+ "angles": [{"dim": "International relations|Internal security|Economy|Governance & polity|Environment|Society|Science & tech|Ethics|Geography & disasters", "point": "what the document means for India in this dimension, 1-2 sentences"}],
  "key_points": [{"point": "one important fact or idea from the document", "why": "why it matters for UPSC, one line", "paper": "GS1|GS2|GS3|GS4|Prelims|Essay", "importance": "High|Medium"}],
  "prelims_facts": ["numbers, names, dates, definitions worth remembering"],
  "mains_angles": ["how this can be used in a Mains answer, one line each"],
  "static_connect": [{"title": "related static topic", "facts": ["1 to 3 short facts"]}],
  "mcqs": [{"question": "UPSC Prelims style question", "options": ["a","b","c","d"], "answer": 0, "explanation": "why, citing the document"}],
  "mains_questions": [{"question": "UPSC Mains style question", "paper": "GS2", "hint": "points to cover"}]}
-Rules: 6 to 12 key points ordered by importance. Up to 6 prelims facts. Up to 4 Mains angles. 0 to 2 static connects.
+Rules: 2 to 4 angles, only dimensions that really apply. 6 to 12 key points ordered by importance. Up to 6 prelims facts. Up to 4 Mains angles. 0 to 2 static connects.
 Questions must come from the document's content. Write up to 5 MCQs and up to 2 Mains questions, fewer if the document is short or has little UPSC value. Do not pad with filler.
 "answer" is the 0-based index of the correct option. If the document has nothing useful for UPSC, say so in the summary and keep the lists short.`;
 
@@ -154,7 +156,11 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     };
   }
 
-  async function analyse(file, onStep) {
+  function checkFile(file) {
+    if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Please use a file smaller than ${MAX_MB} MB.`);
+    if (kindOf(file) === "other") throw new Error("Use a PDF, Word (.docx), text file or a photo of a page.");
+  }
+  async function analyse(file, onStep, old) {
     if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Please use a file smaller than ${MAX_MB} MB.`);
     const kind = kindOf(file);
     if (kind === "other") throw new Error("Use a PDF, Word (.docx), text file or a photo of a page.");
@@ -181,15 +187,17 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
         result = parseJson(await callAI(ai, kind, file, buf, text));
       }
     }
-    const id = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    try { await idb("put", id, { name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : ""), blob: new Blob([buf], { type: file.type }) }); } catch {}
-    const doc = { id, name: file.name, kind, size: file.size, pages, added_at: new Date().toISOString(), reader: used, ...sanitize(result) };
+    const id = old?.id || "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (!old) try { await idb("put", id, { name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : ""), blob: new Blob([buf], { type: file.type }) }); } catch {}
+    const doc = { id, name: file.name, kind, size: file.size, pages, added_at: old?.added_at || new Date().toISOString(), analysed_at: new Date().toISOString(), reader: used, ...sanitize(result) };
     saveDoc(doc);
     return doc;
   }
   function sanitize(r) {
     const arr = (x) => (Array.isArray(x) ? x : []);
     return {
+      relevance: r.relevance && typeof r.relevance === "object" ? { level: ["High", "Medium", "Low"].includes(r.relevance.level) ? r.relevance.level : "", papers: arr(r.relevance.papers).slice(0, 5).map(String), why: String(r.relevance.why || "") } : null,
+      angles: arr(r.angles).filter((a) => a && a.point).slice(0, 4).map((a) => ({ dim: String(a.dim || ""), point: String(a.point) })),
       title: String(r.title || "").slice(0, 160), doc_type: String(r.doc_type || "").slice(0, 60), summary: String(r.summary || "").slice(0, 3000), basic: !!r.basic,
       key_points: arr(r.key_points).slice(0, 14).map((k) => (typeof k === "string" ? { point: k } : { point: String(k.point || ""), why: String(k.why || ""), paper: String(k.paper || ""), importance: k.importance === "High" ? "High" : "Medium" })),
       prelims_facts: arr(r.prelims_facts).slice(0, 8).map(String),
@@ -225,17 +233,27 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
         <span class="doc-meta"><span>${d.key_points.length} points</span>${d.mcqs.length ? `<span>${d.mcqs.length} MCQs</span>` : ""}${d.mains_questions.length ? `<span>${d.mains_questions.length} Mains</span>` : ""}</span></a>`).join("")}</div>`
       : `<div class="empty"><h2>No documents yet</h2><p class="muted">Try a PIB backgrounder, an Economic Survey chapter, a committee report or your own notes.</p></div>`}`;
     const inp = document.querySelector("#docFile"), st = document.querySelector("#dzStatus");
-    inp.onchange = async () => {
+    inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
-      document.querySelector("#drop").classList.add("busy");
-      st.hidden = false; st.className = "dz-status"; st.innerHTML = `<span class="spin">⟳</span> <span id="dzMsg">Opening ${e$(f.name)}…</span>`;
-      try {
-        const d = await analyse(f, (m) => { const x = document.querySelector("#dzMsg"); if (x) x.textContent = m; });
-        location.hash = `#/docs/${d.id}`;
-      } catch (err) {
-        st.className = "dz-status err"; st.textContent = err.message;
-        document.querySelector("#drop").classList.remove("busy"); inp.value = "";
-      }
+      st.hidden = false;
+      try { checkFile(f); } catch (err) { st.className = "dz-status err"; st.textContent = err.message; inp.value = ""; return; }
+      // Step 2: show the chosen file with a clear Analyze button
+      st.className = "dz-status ready";
+      st.innerHTML = `<div class="ready-file"><span class="doc-ico">${KIND_ICON[kindOf(f)] || "📄"}</span><span><b>${e$(f.name)}</b><span class="muted small">${fmtSize(f.size)} · ready to analyse with ${e$(LABEL[ai.p])}</span></span></div>
+        <p class="small muted" style="margin:8px 0 12px">You'll get a summary, UPSC relevance, why it matters for India, key points, Prelims facts, Mains angles${ai.p === "none" ? "" : " and practice questions"}.</p>
+        <div class="row-btns"><button class="btn primary big" id="goAnalyse">✦ Analyze</button><button class="btn" id="pickOther">Choose another file</button></div>`;
+      document.querySelector("#pickOther").onclick = () => { inp.value = ""; st.hidden = true; inp.click(); };
+      document.querySelector("#goAnalyse").onclick = async () => {
+        document.querySelector("#drop").classList.add("busy");
+        st.className = "dz-status"; st.innerHTML = `<span class="spin">⟳</span> <span id="dzMsg">Opening ${e$(f.name)}…</span>`;
+        try {
+          const d = await analyse(f, (m) => { const x = document.querySelector("#dzMsg"); if (x) x.textContent = m; });
+          location.hash = `#/docs/${d.id}`;
+        } catch (err) {
+          st.className = "dz-status err"; st.textContent = err.message;
+          document.querySelector("#drop").classList.remove("busy"); inp.value = "";
+        }
+      };
     };
   }
 
@@ -251,17 +269,21 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       <a href="#/docs" class="small">← My documents</a>
       <h1>${KIND_ICON[d.kind] || "📄"} ${e$(d.title || d.name)}</h1>
       <p class="muted small">${e$(d.name)} · ${fmtSize(d.size)}${d.pages ? ` · ${d.pages} pages` : ""} · saved ${fmtDate(d.added_at)} · read by ${e$(LABEL[d.reader] || d.reader)}</p>
-      <div class="row-btns">${hasFile ? `<button class="btn" id="openOrig">Open original</button>` : `<span class="muted small">The original file is on the device it was uploaded from.</span>`}
+      <div class="row-btns">${hasFile ? `<button class="btn primary" id="reAnalyse">✦ Analyze again</button><button class="btn" id="openOrig">Open original</button>` : `<span class="muted small">The original file is on the device it was uploaded from.</span>`}
         <button class="btn ghost" id="delDoc">Delete</button></div></div>
     <div class="doc-stats">
       <div><b>${d.key_points.length}</b><span>key points</span></div>
       <div><b>${d.prelims_facts.length}</b><span>Prelims facts</span></div>
       <div><b>${d.mcqs.length}</b><span>MCQs</span></div>
       <div><b>${d.mains_questions.length}</b><span>Mains Qs</span></div></div>
-    <div class="doc-jump">${["Summary", "Key points", d.prelims_facts.length && "Prelims", d.mains_angles.length && "Mains", d.mcqs.length + d.mains_questions.length && "Practice"].filter(Boolean)
+    <div class="doc-jump">${["Summary", (d.relevance || d.angles?.length) && "Relevance", "Key points", d.prelims_facts.length && "Prelims", d.mains_angles.length && "Mains", d.mcqs.length + d.mains_questions.length && "Practice"].filter(Boolean)
       .map((x) => `<a href="#" data-jump="${x}">${x}</a>`).join("")}</div>
     <section class="card doc-sec" data-sec="Summary"><h2>📝 Summary</h2><p class="doc-summary">${e$(d.summary)}</p>
       ${d.basic ? `<p class="note">This is a quick summary picked from the document's own sentences. Add a free Gemini key in <a href="#/settings">AI &amp; settings</a> and upload again for full notes and questions.</p>` : ""}</section>
+    ${d.relevance || d.angles?.length ? `<section class="doc-sec card rel-card" data-sec="Relevance"><h2>🎯 UPSC relevance ${d.relevance?.level ? `<span class="imp ${d.relevance.level}">${e$(d.relevance.level)}</span>` : ""}</h2>
+      ${d.relevance?.papers?.length ? `<div class="meta">${d.relevance.papers.map((p) => `<span class="tag ${e$(p)}">${e$(p)}</span>`).join("")}</div>` : ""}
+      ${d.relevance?.why ? `<p>${e$(d.relevance.why)}</p>` : ""}
+      ${d.angles?.length ? `<div class="tile-box why"><div class="lbl">🇮🇳 Why it matters for India</div><div class="angles">${d.angles.map((a) => `<div class="angle"><span class="dim">${(window.DIM_ICON || {})[a.dim] || "•"} ${e$(a.dim)}</span><span>${e$(a.point)}</span></div>`).join("")}</div></div>` : ""}</section>` : ""}
     <section class="doc-sec" data-sec="Key points"><h2 class="h2s">🎯 Key points</h2><div class="kp-grid">${[...high, ...rest].map(kp).join("")}</div></section>
     ${d.prelims_facts.length || d.static_connect.length ? `<section class="doc-sec" data-sec="Prelims"><div class="tile-grid">
       ${d.prelims_facts.length ? `<div class="tile-box"><div class="lbl">Prelims facts</div><ul>${d.prelims_facts.map((x) => `<li>${e$(x)}</li>`).join("")}</ul></div>` : ""}
@@ -288,6 +310,12 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
       if (!/pdf|image|text/.test(f.type)) a.download = f.name;
       a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    };
+    const re = v.querySelector("#reAnalyse");
+    if (re) re.onclick = async () => {
+      const f = await idb("get", id); re.disabled = true; re.textContent = "Analysing…";
+      try { await analyse(new File([f.blob], f.name, { type: f.type }), (m) => (re.textContent = m.length > 40 ? "Analysing…" : m), d); viewDoc(id); }
+      catch (err) { alert(err.message); re.disabled = false; re.textContent = "✦ Analyze again"; }
     };
     v.querySelector("#delDoc").onclick = async () => { if (!confirm("Delete this document and its notes?")) return; await deleteDoc(id); location.hash = "#/docs"; };
   }

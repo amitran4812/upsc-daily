@@ -52,10 +52,10 @@ function setupAuth() {
 }
 
 // ---------- Router ----------
-const routes = { today: viewToday, day: viewToday, subject: viewSubject, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings, docs: (id) => window.DOCS.view(id) };
+const routes = { today: viewToday, day: viewToday, subject: viewSubject, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings, week: viewWeek, docs: (id) => window.DOCS.view(id) };
 async function route() {
   const [, name = "today", ...args] = location.hash.split("/");
-  const nav = name === "day" || name === "subject" ? "today" : name;
+  const nav = name === "day" || name === "subject" ? "today" : name === "week" ? "archive" : name;
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === nav));
   view.innerHTML = `<p class="muted">Loading…</p>`;
   try { await (routes[name] || viewToday)(...args); } catch (e) { view.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p class="muted">${esc(e.message)}</p></div>`; }
@@ -96,6 +96,7 @@ const PAPER_NAME = { GS1: "History, Culture, Geography, Society", GS2: "Polity, 
 
 const DIM_ICON = { "International relations": "🌐", "Internal security": "🛡️", "Economy": "💹", "Governance & polity": "🏛️", "Environment": "🌿",
   "Society": "👥", "Science & tech": "🔬", "Ethics": "⚖️", "Geography & disasters": "🌀" };
+window.DIM_ICON = DIM_ICON;
 function itemCard(it, showDay = false) {
   const n = it.notes || {};
   const imp = it.importance || "Low";
@@ -172,6 +173,67 @@ function impBar(items) {
     <div class="implegend">${["High", "Medium", "Low"].map((k) => `<span><i class="sw ${k}"></i>${k} <b>${c[k]}</b> <em>${Math.round((c[k] / t) * 100)}%</em></span>`).join("")}</div>`;
 }
 
+// ---------- Weekly report ----------
+const weekPdf = (start) => `pdfs/weekly/UPSC-Weekly-${start}.pdf`;
+function weekBanner() {
+  const ws = overview?.weeks || []; if (!STATIC || !ws.length) return "";
+  const cur = ws[0], last = ws.find((w) => w.complete);
+  const card = (w, title) => `<a class="week-banner" href="#/week/${w.start}"><span class="wb-ico">📅</span><span><b>${title}</b><span class="muted small">${esc(w.label)} · ${w.high} top stories · ${w.medium} also important</span></span><span class="wb-go">Open →</span></a>`;
+  return `<div class="week-row">${card(cur, cur.complete ? "Weekly report" : "This week so far")}${last && last !== cur ? card(last, "Last week's report") : ""}</div>`;
+}
+async function viewWeek(start) {
+  $("#crumb").textContent = "Weekly report";
+  if (!STATIC) { view.innerHTML = `<div class="empty"><h2>Weekly reports are in the app version</h2></div>`; return; }
+  const ws = (await api("/api/weekly")) || [];
+  if (!start) {
+    view.innerHTML = `<div class="hero"><div><h1>Weekly reports</h1><p>Every Monday you get a short report of the previous week's important current affairs, with why each matters for India and UPSC, Prelims revision and static topics.</p></div></div>
+      ${ws.length ? `<div class="doc-grid">${ws.map(weekTile).join("")}</div>` : `<div class="empty"><h2>No weekly report yet</h2></div>`}`;
+    return;
+  }
+  const w = await api(`/api/week/${start}`);
+  if (!w) { view.innerHTML = `<div class="empty"><h2>Report not found</h2><p><a href="#/week">All weekly reports</a></p></div>`; return; }
+  const high = w.items.filter((i) => (i.notes?.importance || i.importance) === "High");
+  const med = w.items.filter((i) => (i.notes?.importance || i.importance) !== "High");
+  const prelims = [], statics = [], seenP = new Set(), seenS = new Set();
+  w.items.forEach((i) => {
+    (i.notes?.prelims || []).forEach((p) => { if (!p.startsWith("Key terms") && !seenP.has(p)) { seenP.add(p); prelims.push(p); } });
+    (i.notes?.static || []).forEach((s) => { if (s.title && !seenS.has(s.title)) { seenS.add(s.title); statics.push(s); } });
+  });
+  const bySubj = {}; med.forEach((i) => (bySubj[i.topics[0] || "Other"] ||= []).push(i));
+  const paperCount = PAPER_ORDER.map((p) => ({ label: p, color: PAPER_VAR[p], n: w.items.filter((i) => (i.papers[0] || "Prelims") === p).length }));
+  const dims = {}; w.items.forEach((i) => (i.notes?.analysis?.angles || []).forEach((a) => (dims[a.dim] = (dims[a.dim] || 0) + 1)));
+  const dimMax = Math.max(1, ...Object.values(dims));
+  view.innerHTML = `<div class="hero glance">
+      <div class="glance-text"><div class="eyebrow">Weekly report${w.complete ? "" : " · week in progress"}</div><h1>${esc(w.label)}</h1>
+        <p>${high.length} top stories and ${med.length} more that matter, with why each is important for India and UPSC.</p>
+        <div class="hero-actions">${w.has_pdf ? `<a class="btn primary" href="${weekPdf(w.start)}" download>⬇ Weekly PDF</a>` : ""}<a class="btn" href="#/week">All weeks</a></div></div>
+      <div class="glance-figs card">
+        <div class="fig">${donut(paperCount, w.items.length, "Stories by GS paper")}
+          <div class="fig-legend">${paperCount.filter((p) => p.n).map((p) => `<span><i class="sw" style="background:var(${p.color})"></i>${p.label} <b>${p.n}</b></span>`).join("")}</div></div>
+        <div class="fig-imp"><div class="lbl">What the week was about</div>
+          <div class="dimbars">${Object.entries(dims).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([d, n]) => `<div class="dimbar"><span>${DIM_ICON[d] || "•"} ${esc(d)}</span><i style="width:${Math.round((n / dimMax) * 100)}%"></i><b>${n}</b></div>`).join("")}</div></div>
+      </div></div>
+    ${w.overview ? `<div class="card week-brief"><h2>🗞️ The week in brief</h2>${w.overview.intro ? `<p>${esc(w.overview.intro)}</p>` : ""}
+      <div class="tile-grid">${w.overview.themes.map((t) => `<div class="tile-box"><div class="lbl">${esc(t.title)}</div>${list(t.points)}</div>`).join("")}</div></div>` : ""}
+    <div class="doc-jump">${["Top stories", med.length && "Also important", prelims.length && "Prelims revision", statics.length && "Static topics"].filter(Boolean).map((x) => `<a href="#" data-jump="${x}">${x}</a>`).join("")}</div>
+    ${high.length ? `<section class="doc-sec" data-sec="Top stories"><h2 class="row-h">🔥 Top stories of the week</h2><div class="cards">${high.map((i) => itemCard(i, true)).join("")}</div></section>` : ""}
+    ${med.length ? `<section class="doc-sec" data-sec="Also important"><h2 class="row-h">📌 Also important</h2>
+      ${Object.entries(bySubj).map(([s, its]) => `<div class="card wk-subj"><h3>${subjIcon(s)} ${esc(s)}</h3>${its.map((i) => {
+        const an = i.notes?.analysis; const sum = Array.isArray(i.notes?.summary) ? i.notes.summary[0] : i.notes?.summary;
+        return `<div class="wk-item"><a class="title-link" href="${esc(i.link)}" target="_blank" rel="noopener"><b>${esc(i.title)}</b></a>
+          <span class="muted small">${fmtDay(i.day, { day: "numeric", month: "short" })} · ${esc(i.source)}</span>
+          ${sum ? `<p>${esc(sum)}</p>` : ""}
+          ${an?.angles?.length ? `<div class="wk-why">${an.angles.slice(0, 2).map((a) => `<span><b>${DIM_ICON[a.dim] || "•"} ${esc(a.dim)}:</b> ${esc(a.point)}</span>`).join("")}</div>` : ""}</div>`; }).join("")}</div>`).join("")}</section>` : ""}
+    ${prelims.length ? `<section class="doc-sec card" data-sec="Prelims revision"><h2>📝 Prelims quick revision</h2>${list(prelims.slice(0, 40))}</section>` : ""}
+    ${statics.length ? `<section class="doc-sec" data-sec="Static topics"><h2 class="row-h">🧱 Static topics this week</h2><div class="tile-grid">${statics.slice(0, 20).map((s) => `<div class="tile-box static"><div class="lbl">${esc(s.title)}</div>${list(s.facts)}</div>`).join("")}</div></section>` : ""}`;
+  view.querySelectorAll("[data-jump]").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); view.querySelector(`[data-sec="${a.dataset.jump}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }));
+}
+function weekTile(w) {
+  return `<a class="doc-tile" href="#/week/${w.start}"><span class="doc-ico">📅</span><b>${esc(w.label)}</b>
+    <span class="muted small">${w.complete ? "Full week" : "Week in progress"}</span>
+    <span class="doc-meta"><span>${w.high} top</span><span>${w.medium} also important</span>${w.has_pdf ? "<span>PDF</span>" : ""}</span></a>`;
+}
+
 // ---------- Today / Day (tiles) ----------
 async function viewToday(day) {
   await loadOverview();
@@ -207,6 +269,7 @@ async function viewToday(day) {
           <div class="mini-stats"><span>📝 <b>${items.filter((i) => i.stage !== "Mains").length}</b> Prelims</span><span>✍️ <b>${items.filter((i) => i.stage !== "Prelims").length}</b> Mains</span><span>🧱 <b>${statics}</b> static links</span></div></div>
       </div>
     </div>
+    ${weekBanner()}
     ${must.length ? `<h2 class="row-h">🔥 Must read today</h2>
     <div class="must">${must.map((i) => { const s = i.topics[0] || "Other"; const p = (SUBJECT_META[s] || [0, i.papers[0] || "Prelims"])[1];
       return `<a class="must-tile p-${p}" href="#/subject/${day}/${encodeURIComponent(s)}/${i.id}"><span class="mt-icon">${subjIcon(s)}</span><span class="mt-sub">${esc(s)}</span><b>${esc(i.title)}</b><span class="mt-src">${esc(i.source)}</span></a>`; }).join("")}</div>` : ""}
@@ -277,7 +340,9 @@ async function viewArchive() {
   if (!runs.length) { view.innerHTML = `<div class="empty"><h2>No PDFs yet</h2><p class="muted">The first daily PDF appears here after the first update.</p></div>`; return; }
   const byMonth = {};
   runs.forEach((r) => (byMonth[r.day.slice(0, 7)] ||= []).push(r));
-  view.innerHTML = `<div class="hero"><div><h1>PDF Archive</h1><p>${runs.length} daily PDFs, ${overview.total_items} notes in total.</p></div></div>
+  const ws = overview.weeks || [];
+  view.innerHTML = `<div class="hero"><div><h1>PDF Archive</h1><p>${runs.length} daily PDFs, ${ws.length ? `${ws.length} weekly reports, ` : ""}${overview.total_items} notes in total.</p></div></div>
+    ${ws.length ? `<h2 class="row-h">📅 Weekly reports</h2><div class="doc-grid" style="margin-bottom:22px">${ws.map(weekTile).join("")}</div><h2 class="row-h">🗓️ Daily PDFs</h2>` : ""}
     <div class="months">${Object.entries(byMonth).map(([m, rs]) => `<div class="month"><h2>${monthLabel(m)}</h2><div class="days">
       ${rs.map((r) => `<div class="day"><b>${fmtDay(r.day, { day: "numeric", month: "short" })}</b>
         <span class="muted small">${fmtDay(r.day, { weekday: "long" })} · ${r.item_count} items</span>

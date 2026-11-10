@@ -50,8 +50,9 @@ def main():
     # backfill "Static connect" and "Why it matters" for recent items written before those features
     from app.static_facts import static_connect
     from app.analysis import india_angles
+    redo = set()
     with db.conn() as c:
-        rows = c.execute("SELECT id,title,excerpt,notes,importance FROM items WHERE day >= ?",
+        rows = c.execute("SELECT id,day,title,excerpt,notes,importance FROM items WHERE day >= ?",
                          ((date.today() - timedelta(days=8)).isoformat(),)).fetchall()
         for r in rows:
             n = json.loads(r["notes"] or "{}")
@@ -64,6 +65,7 @@ def main():
                     n["analysis"] = an; changed = True
             if changed:
                 c.execute("UPDATE items SET notes=? WHERE id=?", (json.dumps(n), r["id"]))
+                redo.add(r["day"])
 
     if SITE.exists():
         shutil.rmtree(SITE)
@@ -104,6 +106,14 @@ def main():
     write(SITE / "version.json", {"app": ver, "built_at": datetime.now().isoformat(timespec="minutes")})
     (SITE / ".nojekyll").write_text("")
 
+    from app.pdfgen import build_pdf
+    for d in sorted(redo):                      # refresh those days' PDFs so they show the new sections
+        build_pdf(d, day_items(d))
+
+    # ---- weekly reports (built before notifications are exported, so "report ready" shows up) ----
+    from app.weekly import build_weeks
+    weeks = build_weeks(today())
+
     # ---- data ----
     with db.conn() as c:
         runs = [dict(r) for r in c.execute(
@@ -114,7 +124,11 @@ def main():
         total = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]
     for r in runs:
         r["has_pdf"] = bool(r.pop("pdf_path"))
+    write(SITE / "data" / "weekly.json", [{k: v for k, v in w.items() if k != "items"} for w in weeks])
+    for w in weeks:
+        write(SITE / "data" / "week" / f"{w['start']}.json", w)
     write(SITE / "data" / "overview.json", {"today": today(), "runs": runs, "total_items": total,
+                                             "weeks": [{k: w[k] for k in ("start", "label", "complete", "high", "medium", "has_pdf")} for w in weeks[:12]],
                                              "papers": PAPER_LABELS, "built_at": datetime.now().isoformat()})
     cutoff = (date.today() - timedelta(days=365)).isoformat()
     every = []
