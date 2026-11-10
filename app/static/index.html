@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UPSC Daily</title>
+<meta name="description" content="Daily UPSC CSE current affairs from PIB and The Hindu, with notes, PDFs and monthly quizzes.">
+<meta name="theme-color" content="#c2410c">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="icon" href="/static/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><img src="/static/icon-192.png" class="logo" alt=""><div><b>UPSC Daily</b><small>Current affairs for CSE</small></div></div>
+    <nav class="nav">
+      <a href="#/today" data-nav="today"><i>◉</i><span>Today</span></a>
+      <a href="#/archive" data-nav="archive"><i>▤</i><span>PDFs</span></a>
+      <a href="#/explore" data-nav="explore"><i>⌕</i><span>Explore</span></a>
+      <a href="#/saved" data-nav="saved"><i>★</i><span>Saved</span></a>
+      <a href="#/quiz" data-nav="quiz"><i>✎</i><span>Quiz</span></a>
+      <a href="#/settings" data-nav="settings"><i>⚙</i><span>AI &amp; settings</span></a>
+    </nav>
+    <div class="side-foot">
+      <div id="nextFetch" class="muted small"></div>
+      <div class="muted small">Sources: <a href="https://pib.gov.in" target="_blank" rel="noopener">PIB</a> · <a href="https://www.thehindu.com" target="_blank" rel="noopener">The Hindu</a></div>
+    </div>
+  </aside>
+  <main>
+    <header class="top">
+      <div class="crumb-wrap"><img src="/static/icon-192.png" class="logo sm" alt=""><div id="crumb" class="crumb"></div></div>
+      <div class="top-actions">
+        <button id="installBtn" class="btn ghost" hidden>⤓<span class="lbl-sm"> Install app</span></button>
+        <button id="fetchBtn" class="btn ghost">↻<span class="lbl-sm"> Update now</span></button>
+        <div class="bell-wrap">
+          <button id="bell" class="btn icon" aria-label="Notifications">🔔<span id="badge" class="badge" hidden></span></button>
+          <div id="notifPanel" class="panel" hidden></div>
+        </div>
+        <a href="#/settings" id="who" class="who"></a>
+      </div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<div id="auth" class="auth" hidden>
+  <form id="authForm" class="auth-card" autocomplete="on">
+    <img src="/static/icon-192.png" class="logo lg" alt="">
+    <h1 id="authTitle">Sign in</h1>
+    <p class="muted">Daily UPSC current affairs from PIB and The Hindu. Your saved notes, quiz scores and AI settings follow you to every device.</p>
+    <label>Username<input class="input" name="username" required minlength="3" maxlength="30" autocapitalize="none" autocomplete="username"></label>
+    <label>Password<input class="input" name="password" type="password" required minlength="6" autocomplete="current-password"></label>
+    <button class="btn primary big" id="authGo" type="submit">Sign in</button>
+    <div id="authMsg" class="err"></div>
+    <a href="#" id="authSwitch" class="small"></a>
+  </form>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

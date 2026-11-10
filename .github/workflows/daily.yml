@@ -1,0 +1,53 @@
+name: Daily current affairs
+
+on:
+  schedule:
+    - cron: "30 1 * * *"    # 07:00 IST
+    - cron: "0 14 * * *"    # 19:30 IST (picks up PIB releases from the day)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch news, write notes, build PDFs and site
+        env:
+          TZ: Asia/Kolkata
+          # Optional: add one of these as a repository secret for AI-written shared notes and quizzes
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python build_static.py
+      - name: Save today's database and PDFs
+        run: |
+          git config user.name "upsc-daily-bot"
+          git config user.email "upsc-daily-bot@users.noreply.github.com"
+          git add state
+          git diff --cached --quiet || git commit -m "Daily update $(date +%F)"
+          git push
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
