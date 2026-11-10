@@ -55,6 +55,8 @@ def fetch_all(feeds=FEEDS, get=None, log=None):
                 title = clean(e.get("title"))
                 if not link or not title or link in seen:
                     continue
+                if sum(1 for ch in title if ord(ch) > 0x0900) > len(title) * 0.3:
+                    continue   # English notes only (skip Hindi/regional-language releases)
                 seen.add(link)
                 excerpt = shorten(clean(e.get("summary") or e.get("description")))
                 if not excerpt and f["source"] == "PIB" and not get:

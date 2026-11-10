@@ -20,8 +20,12 @@ USER_AGENT = "UPSC-CA-Portal/1.0 (personal study tool; RSS reader)"
 # and a link back to the article; full articles are never copied.
 FEEDS = [
     # PIB: all English press releases (national)
+    # (Lang=1 turned out to be Hindi; English releases are tried on the other language ids,
+    #  and any non-English item is filtered out in fetcher.py)
     {"source": "PIB", "section": "Press Releases",
-     "url": "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"},
+     "url": "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=2&Regid=3"},
+    {"source": "PIB", "section": "Press Releases",
+     "url": "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=3&Regid=3"},
     # The Hindu sections most useful for UPSC
     {"source": "The Hindu", "section": "National",
      "url": "https://www.thehindu.com/news/national/feeder/default.rss"},
