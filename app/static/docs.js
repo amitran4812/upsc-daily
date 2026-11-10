@@ -160,6 +160,16 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Please use a file smaller than ${MAX_MB} MB.`);
     if (kindOf(file) === "other") throw new Error("Use a PDF, Word (.docx), text file or a photo of a page.");
   }
+  async function saveOnly(file) {
+    checkFile(file);
+    const kind = kindOf(file), buf = await file.arrayBuffer();
+    const id = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await idb("put", id, { name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : ""), blob: new Blob([buf], { type: file.type }) });
+    const doc = { id, name: file.name, kind, size: file.size, pages: null, added_at: new Date().toISOString(), analysed: false, reader: "",
+      ...sanitize({ title: file.name.replace(/\.[^.]+$/, "") }) };
+    saveDoc(doc);
+    return doc;
+  }
   async function analyse(file, onStep, old) {
     if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Please use a file smaller than ${MAX_MB} MB.`);
     const kind = kindOf(file);
@@ -189,7 +199,7 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     }
     const id = old?.id || "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     if (!old) try { await idb("put", id, { name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : ""), blob: new Blob([buf], { type: file.type }) }); } catch {}
-    const doc = { id, name: file.name, kind, size: file.size, pages, added_at: old?.added_at || new Date().toISOString(), analysed_at: new Date().toISOString(), reader: used, ...sanitize(result) };
+    const doc = { id, name: file.name, kind, size: file.size, pages, added_at: old?.added_at || new Date().toISOString(), analysed_at: new Date().toISOString(), analysed: true, reader: used, ...sanitize(result) };
     saveDoc(doc);
     return doc;
   }
@@ -244,7 +254,7 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
         <b>${e$(d.title || d.name)}</b>
         <span class="up-date">⬆ Uploaded ${fmtWhen(d.added_at)}</span>
         ${d.doc_type ? `<span class="muted small">${e$(d.doc_type)}</span>` : ""}
-        <span class="doc-meta"><span>${d.key_points.length} points</span>${d.mcqs.length ? `<span>${d.mcqs.length} MCQs</span>` : ""}${d.mains_questions.length ? `<span>${d.mains_questions.length} Mains</span>` : ""}</span></a>`;
+        <span class="doc-meta">${d.analysed === false ? `<span class="to-read">📖 Saved to read · not analysed</span>` : `<span>${d.key_points.length} points</span>${d.mcqs.length ? `<span>${d.mcqs.length} MCQs</span>` : ""}${d.mains_questions.length ? `<span>${d.mains_questions.length} Mains</span>` : ""}`}</span></a>`;
   function savedList(docs) {
     const sorted = [...docs].sort((a, b) => sortBy === "az" ? (a.title || a.name).localeCompare(b.title || b.name)
       : sortBy === "old" ? (a.added_at || "").localeCompare(b.added_at || "") : (b.added_at || "").localeCompare(a.added_at || ""));
@@ -292,7 +302,12 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       st.className = "dz-status ready";
       st.innerHTML = `<div class="ready-file"><span class="doc-ico">${KIND_ICON[kindOf(f)] || "📄"}</span><span><b>${e$(f.name)}</b><span class="muted small">${fmtSize(f.size)} · ready to analyse with ${e$(LABEL[ai.p])}</span></span></div>
         <p class="small muted" style="margin:8px 0 12px">You'll get a summary, UPSC relevance, why it matters for India, key points, Prelims facts, Mains angles${ai.p === "none" ? "" : " and practice questions"}.</p>
-        <div class="row-btns"><button class="btn primary big" id="goAnalyse">✦ Analyze</button><button class="btn" id="pickOther">Choose another file</button></div>`;
+        <div class="row-btns"><button class="btn primary big" id="goAnalyse">✦ Analyze</button><button class="btn big" id="saveOnly">📖 Just save to read</button><button class="btn ghost" id="pickOther">Choose another file</button></div>
+        <p class="muted small" style="margin:8px 0 0">"Just save to read" keeps the document with today's upload date, without any analysis. You can tap Analyze on it any time later.</p>`;
+      document.querySelector("#saveOnly").onclick = async () => {
+        try { const d = await saveOnly(f); location.hash = `#/docs/${d.id}/read`; }
+        catch (err) { st.className = "dz-status err"; st.textContent = err.message; }
+      };
       document.querySelector("#pickOther").onclick = () => { inp.value = ""; st.hidden = true; inp.click(); };
       document.querySelector("#goAnalyse").onclick = async () => {
         document.querySelector("#drop").classList.add("busy");
@@ -314,13 +329,24 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     if (!d) { v.innerHTML = `<div class="empty"><h2>Document not found</h2><p><a href="#/docs">Back to My documents</a></p></div>`; return; }
     document.querySelector("#crumb").textContent = "My documents";
     const hasFile = await idb("get", id).then((x) => !!x).catch(() => false);
+    if (d.analysed === false) {
+      v.innerHTML = `<div class="doc-hero">
+        <a href="#/docs" class="small">← My documents</a>
+        <h1>${KIND_ICON[d.kind] || "📄"} ${e$(d.title || d.name)}</h1>
+        <p class="muted small">${e$(d.name)} · ${fmtSize(d.size)} · uploaded ${fmtWhen(d.added_at)} · saved to read, not analysed</p>
+        <div class="row-btns">${hasFile ? `<a class="btn primary big" href="#/docs/${id}/read">📖 Read</a><button class="btn big" id="reAnalyse">✦ Analyze</button>` : `<span class="muted small">The file is on the device it was uploaded from. Open it there to read or analyse it.</span>`}
+          <button class="btn ghost" id="delDoc">Delete</button></div></div>
+        <div class="empty"><h2>Not analysed yet</h2><p class="muted">Tap <b>Analyze</b> when you want a summary, UPSC relevance, key points and practice questions for this document.</p></div>`;
+      wireButtons(v, d, id);
+      return;
+    }
     const high = d.key_points.filter((k) => k.importance === "High"), rest = d.key_points.filter((k) => k.importance !== "High");
     const kp = (k) => `<div class="kp ${k.importance === "High" ? "hi" : ""}"><div>${e$(k.point)}</div>${k.why ? `<span class="muted small">Why it matters: ${e$(k.why)}</span>` : ""}${k.paper ? `<span class="paper-tag">${e$(k.paper)}</span>` : ""}</div>`;
     v.innerHTML = `<div class="doc-hero">
       <a href="#/docs" class="small">← My documents</a>
       <h1>${KIND_ICON[d.kind] || "📄"} ${e$(d.title || d.name)}</h1>
       <p class="muted small">${e$(d.name)} · ${fmtSize(d.size)}${d.pages ? ` · ${d.pages} pages` : ""} · uploaded ${fmtWhen(d.added_at)}${d.analysed_at && d.analysed_at.slice(0, 16) !== (d.added_at || "").slice(0, 16) ? ` · analysed again ${fmtWhen(d.analysed_at)}` : ""} · read by ${e$(LABEL[d.reader] || d.reader)}</p>
-      <div class="row-btns">${hasFile ? `<button class="btn primary" id="reAnalyse">✦ Analyze again</button><button class="btn" id="openOrig">Open original</button>` : `<span class="muted small">The original file is on the device it was uploaded from.</span>`}
+      <div class="row-btns">${hasFile ? `<a class="btn primary" href="#/docs/${id}/read">📖 Read document</a><button class="btn" id="reAnalyse">✦ Analyze again</button>` : `<span class="muted small">The original file is on the device it was uploaded from.</span>`}
         <button class="btn ghost" id="delDoc">Delete</button></div></div>
     <div class="doc-stats">
       <div><b>${d.key_points.length}</b><span>key points</span></div>
@@ -356,22 +382,66 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       const rv = card.querySelector(".review"); rv.innerHTML = window.reviewHtml(q, +b.dataset.j, docRefHtml(d, q)); rv.hidden = false;
       card.classList.add(+b.dataset.j === q.answer ? "got" : "missed");
     });
-    const op = v.querySelector("#openOrig");
-    if (op) op.onclick = async () => {
-      const f = await idb("get", id); const url = URL.createObjectURL(f.blob);
-      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
-      if (!/pdf|image|text/.test(f.type)) a.download = f.name;
-      a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-    };
+    wireButtons(v, d, id);
+  }
+  function wireButtons(v, d, id) {
     const re = v.querySelector("#reAnalyse");
     if (re) re.onclick = async () => {
+      const label = re.textContent;
       const f = await idb("get", id); re.disabled = true; re.textContent = "Analysing…";
       try { await analyse(new File([f.blob], f.name, { type: f.type }), (m) => (re.textContent = m.length > 40 ? "Analysing…" : m), d); viewDoc(id); }
-      catch (err) { alert(err.message); re.disabled = false; re.textContent = "✦ Analyze again"; }
+      catch (err) { alert(err.message); re.disabled = false; re.textContent = label; }
     };
     v.querySelector("#delDoc").onclick = async () => { if (!confirm("Delete this document and its notes?")) return; await deleteDoc(id); location.hash = "#/docs"; };
   }
 
-  window.DOCS = { view: (id) => (id ? viewDoc(id) : viewList()), list: listDocs, monthQuestions };
+  // ---------- In-app reader (works offline; the file is stored on this device) ----------
+  async function viewReader(id) {
+    const d = getDoc(id), v = document.querySelector("#view");
+    document.querySelector("#crumb").textContent = "Reading";
+    const f = await idb("get", id).catch(() => null);
+    if (!d || !f) { v.innerHTML = `<div class="empty"><h2>File not on this device</h2><p class="muted">Open it on the device it was uploaded from.</p><p><a href="#/docs/${e$(id)}">Back</a></p></div>`; return; }
+    const kind = d.kind;
+    v.innerHTML = `<div class="reader-bar"><a class="btn" href="#/docs/${id}">← ${d.analysed === false ? "Back" : "Notes"}</a>
+        <div class="rb-title"><b>${e$(d.title || d.name)}</b><span class="muted small">Uploaded ${fmtWhen(d.added_at)}</span></div>
+        ${kind === "pdf" ? `<span class="muted small" id="pgInfo"></span><button class="btn" id="zOut" aria-label="Smaller">−</button><button class="btn" id="zIn" aria-label="Bigger">+</button>` : ""}
+        <button class="btn" id="dl">⬇ Save copy</button></div>
+      <div class="reader" id="reader"><p class="muted">Opening…</p></div>`;
+    v.querySelector("#dl").onclick = () => { const u = URL.createObjectURL(f.blob); const a = document.createElement("a"); a.href = u; a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 60000); };
+    const box = v.querySelector("#reader");
+    try {
+      if (kind === "pdf") await renderPdf(box, await f.blob.arrayBuffer());
+      else if (kind === "image") { const u = URL.createObjectURL(f.blob); box.innerHTML = `<img class="reader-img" src="${u}" alt="${e$(d.name)}">`; }
+      else if (kind === "docx") { await loadScript(CDN.mammoth); box.innerHTML = `<article class="reader-doc">${(await window.mammoth.convertToHtml({ arrayBuffer: await f.blob.arrayBuffer() })).value.replace(/<script[\s\S]*?<\/script>/gi, "")}</article>`; }
+      else box.innerHTML = `<pre class="reader-text">${e$(await f.blob.text())}</pre>`;
+    } catch (err) { box.innerHTML = `<div class="dz-status err">Could not open this file: ${e$(err.message)}</div>`; }
+  }
+  async function renderPdf(box, buf) {
+    await loadScript(CDN.pdf);
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = CDN.pdfWorker;
+    const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    let zoom = 1;
+    const info = document.querySelector("#pgInfo");
+    if (info) info.textContent = `${pdf.numPages} page${pdf.numPages > 1 ? "s" : ""}`;
+    const draw = () => {
+      box.innerHTML = Array.from({ length: pdf.numPages }, (_, i) => `<div class="pdf-page" data-p="${i + 1}"><span class="pg-no">${i + 1}</span></div>`).join("");
+      const width = Math.min(box.clientWidth, 1000) * zoom, dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const io = new IntersectionObserver((ents) => ents.forEach(async (en) => {
+        if (!en.isIntersecting || en.target.dataset.done) return; en.target.dataset.done = 1; io.unobserve(en.target);
+        const page = await pdf.getPage(+en.target.dataset.p); const vp0 = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: (width / vp0.width) * dpr });
+        const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; c.style.width = width + "px";
+        en.target.style.minHeight = ""; en.target.appendChild(c);
+        await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      }), { rootMargin: "800px 0px" });
+      box.querySelectorAll(".pdf-page").forEach((el) => { el.style.minHeight = Math.round(width * 1.3) + "px"; el.style.width = width + "px"; io.observe(el); });
+    };
+    draw();
+    const zi = document.querySelector("#zIn"), zo = document.querySelector("#zOut");
+    if (zi) zi.onclick = () => { zoom = Math.min(zoom + 0.25, 2.5); draw(); };
+    if (zo) zo.onclick = () => { zoom = Math.max(zoom - 0.25, 0.5); draw(); };
+  }
+
+  window.DOCS = { view: (id, mode) => (id ? (mode === "read" ? viewReader(id) : viewDoc(id)) : viewList()), list: listDocs, monthQuestions: (m, n) => monthQuestions(m, n) };
   window.addEventListener("upsc-synced", () => { if (location.hash === "#/docs" && !document.querySelector(".dropzone.busy")) window.DOCS.view(); });
 })();
