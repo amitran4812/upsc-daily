@@ -6,6 +6,7 @@
 <title>UPSC Daily</title>
 <meta name="description" content="Daily UPSC CSE current affairs from PIB and The Hindu, with notes, PDFs and monthly quizzes.">
 <meta name="theme-color" content="#c2410c">
+<script>try { const t = localStorage.getItem("upsc:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="icon" href="/static/icon-192.png">
@@ -35,6 +36,7 @@
     <header class="top">
       <div class="crumb-wrap"><img src="/static/icon-192.png" class="logo sm" alt=""><div id="crumb" class="crumb"></div></div>
       <div class="top-actions">
+        <button id="themeBtn" class="btn ghost theme-btn" title="Switch light / dark theme" aria-label="Switch light or dark theme">🌙</button>
         <button id="updateBtn" class="btn ghost upd" title="Check for updates">⟳<span class="lbl-sm"> Check for updates</span><span class="upd-dot" hidden></span></button>
         <button id="installBtn" class="btn ghost" hidden>⤓<span class="lbl-sm"> Install app</span></button>
         <button id="fetchBtn" class="btn ghost">↻<span class="lbl-sm"> Update now</span></button>

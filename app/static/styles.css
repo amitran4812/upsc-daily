@@ -425,3 +425,15 @@ body { overscroll-behavior-y: contain; }
 .date-group { margin: 16px 0 10px; font-size: 16px; display: flex; gap: 8px; align-items: baseline; }
 .up-date { font-size: 12px; font-weight: 600; color: var(--accent); }
 @media (max-width: 560px) { .saved-head .input { width: 100%; } }
+
+/* ---------- Theme switch: the top-bar toggle sets data-theme on <html> ---------- */
+:root[data-theme="dark"] {
+    --bg: #12161c; --surface: #1a2029; --surface-2: #222a35; --ink: #e8e4dc; --muted: #9aa4b2;
+    --line: #2c3542; --accent: #fb923c; --accent-soft: #3a2518; --ok: #4ade80; --bad: #f87171;
+    --gs1: #a78bfa; --gs2: #38bdf8; --gs3: #4ade80; --gs4: #fbbf24; --pre: #f472b6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 24px rgba(0,0,0,.25);
+  }
+:root[data-theme="dark"] {
+  --gs1-bg: #2a2340; --gs2-bg: #15303f; --gs3-bg: #183223; --gs4-bg: #3a2e17; --pre-bg: #3a1c2b; }
+:root[data-theme="dark"] { color-scheme: dark; } :root[data-theme="light"] { color-scheme: light; }
+.theme-btn { font-size: 16px; padding: 7px 10px; }

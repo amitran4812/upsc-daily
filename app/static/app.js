@@ -638,6 +638,29 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) chec
 
 // ---------- Boot ----------
 let started = false;
+// ---------- Light / dark theme (remembered on this device) ----------
+function currentTheme() {
+  return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+}
+function setupTheme() {
+  const b = $("#themeBtn"); if (!b) return;
+  const paint = () => {
+    const t = currentTheme();
+    b.textContent = t === "dark" ? "☀️" : "🌙";
+    b.title = t === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t === "dark" ? "#12161c" : "#c2410c");
+  };
+  b.onclick = () => {
+    const t = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem("upsc:theme", t); } catch {}
+    paint();
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", paint);
+  paint();
+}
+setupTheme();
+
 async function start() {
   const me = STATIC ? { username: "" } : await fetch("/api/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => null);
   if (STATIC) $("#fetchBtn").hidden = true;
