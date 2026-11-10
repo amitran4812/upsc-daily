@@ -1,5 +1,6 @@
 """Rule-based notes used when no AI key is configured (or as a fallback)."""
 import re
+from .static_facts import static_connect
 
 
 
@@ -32,6 +33,9 @@ def rule_notes(item):
         facts.append("Key terms: " + ", ".join(terms))
     imp = item.get("importance") or "Low"
     n = {"summary": sents[:2], "ai": False}
+    sc = static_connect(item["title"] + " " + item["excerpt"])
+    if sc:
+        n["static"] = sc
     if imp == "Low":
         return n                      # low-priority news: headline + summary only, no filler
     if facts:

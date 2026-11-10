@@ -47,6 +47,17 @@ def main():
     if not has_quiz:
         print(generate_quiz(prev_month()))
 
+    # backfill "Static connect" for recent items written before that feature existed
+    from app.static_facts import static_connect
+    with db.conn() as c:
+        rows = c.execute("SELECT id,title,excerpt,notes,importance FROM items WHERE day >= ?",
+                         ((date.today() - timedelta(days=3)).isoformat(),)).fetchall()
+        for r in rows:
+            n = json.loads(r["notes"] or "{}")
+            if "static" not in n and "summary" in n:
+                n["static"] = static_connect(f"{r['title']} {r['excerpt']}")
+                c.execute("UPDATE items SET notes=? WHERE id=?", (json.dumps(n), r["id"]))
+
     if SITE.exists():
         shutil.rmtree(SITE)
     (SITE / "static").mkdir(parents=True)

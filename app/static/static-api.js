@@ -80,6 +80,7 @@
           const note = { ...base.notes, ai: true };
           ["summary", "prelims", "mains"].forEach((k) => { if (k in a) note[k] = a[k]; });
           if (["High", "Medium", "Low"].includes(a.importance)) note.importance = a.importance;
+          if (Array.isArray(a.static) && a.static.length) note.static = a.static.filter((x) => x && x.title).slice(0, 2);
           if (a.question && (note.importance || base.importance) === "High") note.question = a.question; else delete note.question;
           store[base.id] = note; n++;
         }

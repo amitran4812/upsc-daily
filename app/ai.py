@@ -80,7 +80,12 @@ Return ONLY a JSON array, one object per item, with keys:
   "mains": one sentence on the Mains angle and GS paper, or "" if it has no real Mains value,
   "question": a UPSC-style Mains practice question ONLY if importance is "High" and the topic is
               genuinely likely to be examined; otherwise "",
-  "stage": "Prelims", "Mains" or "Both".
+  "stage": "Prelims", "Mains" or "Both",
+  "static": for Medium/High items, 1-2 objects {"title": ..., "facts": [2-3 short, well-established
+            textbook facts], "upsc": one line on the exam angle} giving the STATIC syllabus background
+            of a place, institution, law, constitutional article, species, scheme or concept in the
+            news (e.g. a strait's location, which body publishes a report). Only facts you are sure of;
+            otherwise [].
 Avoid filler. Leave a field empty rather than writing something generic.
 
 Items:
@@ -113,6 +118,8 @@ def merge_notes(base, a):
     if not a:
         return base
     n = dict(base)
+    if isinstance(a.get("static"), list) and a["static"]:
+        n["static"] = [x for x in a["static"] if isinstance(x, dict) and x.get("title")][:2] or n.get("static", [])
     for k in ("summary", "prelims", "mains"):
         if k in a:
             n[k] = a[k] or ([] if k != "mains" else "")

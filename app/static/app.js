@@ -52,13 +52,13 @@ function setupAuth() {
 }
 
 // ---------- Router ----------
-const routes = { today: viewToday, day: viewToday, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings };
+const routes = { today: viewToday, day: viewToday, subject: viewSubject, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings };
 async function route() {
-  const [, name = "today", arg] = location.hash.split("/");
-  const nav = name === "day" ? "today" : name;
+  const [, name = "today", ...args] = location.hash.split("/");
+  const nav = name === "day" || name === "subject" ? "today" : name;
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === nav));
   view.innerHTML = `<p class="muted">Loading…</p>`;
-  try { await (routes[name] || viewToday)(arg); } catch (e) { view.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p class="muted">${esc(e.message)}</p></div>`; }
+  try { await (routes[name] || viewToday)(...args); } catch (e) { view.innerHTML = `<div class="empty"><h2>Something went wrong</h2><p class="muted">${esc(e.message)}</p></div>`; }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
@@ -84,28 +84,43 @@ function sourceLine(it) {
   const what = it.source === "PIB" ? "Open the PIB press release" : "Read the full article on The Hindu";
   return `<div class="source"><span class="muted">Source: ${esc(sourceLabel(it))}</span><a href="${esc(it.link)}" target="_blank" rel="noopener">${what} ↗</a></div>`;
 }
+const SUBJECT_META = {
+  "History & Art and Culture": ["🏛️", "GS1"], "Geography": ["🌏", "GS1"], "Indian Society": ["👥", "GS1"],
+  "Polity & Constitution": ["⚖️", "GS2"], "Governance & Social Justice": ["📋", "GS2"], "International Relations": ["🌐", "GS2"],
+  "Economy": ["📈", "GS3"], "Agriculture": ["🌾", "GS3"], "Science & Technology": ["🚀", "GS3"], "Environment & Ecology": ["🌿", "GS3"],
+  "Disaster Management": ["🌪️", "GS3"], "Internal Security": ["🛡️", "GS3"], "Ethics & Integrity": ["🧭", "GS4"],
+  "Reports & Indices": ["📊", "Prelims"], "Awards, Days & Persons": ["🏅", "Prelims"], "Other": ["🗞️", "Prelims"],
+};
+const subjIcon = (s) => (SUBJECT_META[s] || SUBJECT_META.Other)[0];
+const PAPER_NAME = { GS1: "History, Culture, Geography, Society", GS2: "Polity, Governance, IR", GS3: "Economy, Environment, S&T, Security", GS4: "Ethics", Prelims: "Prelims facts" };
+
 function itemCard(it, showDay = false) {
   const n = it.notes || {};
   const imp = it.importance || "Low";
   const pyqs = (n.related_pyqs || []).map((q) => `<li><b>${esc(q.year)} ${esc(q.paper)}:</b> ${esc(q.question)}</li>`).join("");
+  const sum = Array.isArray(n.summary) ? n.summary : n.summary ? [n.summary] : [];
+  const key = sum[0] || it.excerpt;
+  const statics = (n.static || []).map((s) => `<div class="tile-box static"><div class="lbl">🧱 Static connect · ${esc(s.title)}</div>${list(s.facts)}${s.upsc ? `<div class="upsc">🎯 ${esc(s.upsc)}</div>` : ""}</div>`).join("");
   const boxes = [
-    n.prelims?.length ? `<div class="box"><div class="lbl">Prelims pointers</div>${list(n.prelims)}</div>` : "",
-    n.mains ? `<div class="box"><div class="lbl">Mains angle</div>${esc(n.mains)}</div>` : "",
-    pyqs ? `<div class="box"><div class="lbl">Asked before (PYQ)</div><ul>${pyqs}</ul></div>` : "",
-    n.question ? `<div class="box"><div class="lbl">Practice question</div><div class="q">${esc(n.question)}</div></div>` : "",
+    statics,
+    n.prelims?.length ? `<div class="tile-box pre"><div class="lbl">📝 Prelims pointers</div>${list(n.prelims)}</div>` : "",
+    n.mains ? `<div class="tile-box mains"><div class="lbl">✍️ Mains angle</div><p>${esc(n.mains)}</p></div>` : "",
+    pyqs ? `<div class="tile-box pyq"><div class="lbl">📚 Asked before (PYQ)</div><ul>${pyqs}</ul></div>` : "",
+    n.question ? `<div class="tile-box q"><div class="lbl">❓ Practice question</div><p class="q">${esc(n.question)}</p></div>` : "",
   ].join("");
-  return `<article class="card imp-${imp}" data-id="${it.id}">
+  return `<article class="card ncard imp-${imp}" data-id="${it.id}">
     <div class="meta">
-      <span class="imp ${imp}">${imp} importance</span>
+      <span class="imp ${imp}">${imp === "High" ? "🔥 " : ""}${imp}</span>
       ${it.papers.map((p) => `<span class="tag ${esc(p)}">${esc(p)}</span>`).join("")}
       <span class="tag stage">${esc(it.stage === "Both" ? "Prelims + Mains" : it.stage)}</span>
-      ${n.ai ? `<span class="tag ai">✦ AI notes</span>` : ""}
+      ${n.ai ? `<span class="tag ai">✦ AI</span>` : ""}
       ${showDay ? `<span>${fmtDay(it.day, { day: "numeric", month: "short", year: "numeric" })}</span>` : ""}
       <button class="mark ${it.bookmarked ? "on" : ""}" data-mark="${it.id}" aria-label="Save for revision">${it.bookmarked ? "★" : "☆"}</button>
     </div>
     <h3><a class="title-link" href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.title)}</a></h3>
-    ${n.summary?.length ? list(n.summary) : `<p>${esc(it.excerpt)}</p>`}
-    ${boxes ? `<div class="sect">${boxes}</div>` : ""}
+    <div class="keypoint"><span>Key point</span>${esc(key)}</div>
+    ${sum.length > 1 ? list(sum.slice(1)) : ""}
+    ${boxes ? `<div class="tile-grid">${boxes}</div>` : ""}
     ${sourceLine(it)}
   </article>`;
 }
@@ -116,6 +131,7 @@ function briefRow(it) {
 }
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-mark]"); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
   const r = await post(`/api/bookmark/${b.dataset.mark}`);
   b.classList.toggle("on", r.bookmarked); b.textContent = r.bookmarked ? "★" : "☆";
   toast(r.bookmarked ? "Saved for revision" : "Removed from saved");
@@ -127,11 +143,29 @@ function sections(items) {
   items.forEach((i) => { const s = i.topics[0] || "Other"; (groups[s] ||= { paper: i.papers[0] || "Prelims", items: [] }).items.push(i); });
   return Object.entries(groups).map(([subject, g]) => {
     g.items.sort((a, b) => RANK[a.importance || "Low"] - RANK[b.importance || "Low"] || b.score - a.score);
-    return { subject, paper: g.paper, items: g.items, high: g.items.filter((i) => i.importance === "High").length };
+    return { subject, paper: (SUBJECT_META[subject] || [0, g.paper])[1], items: g.items, high: g.items.filter((i) => i.importance === "High").length };
   }).sort((a, b) => PAPER_ORDER.indexOf(a.paper) - PAPER_ORDER.indexOf(b.paper) || b.high - a.high || b.items.length - a.items.length);
 }
 
-// ---------- Today / Day ----------
+// ---------- Figures (inline SVG) ----------
+const PAPER_VAR = { GS1: "--gs1", GS2: "--gs2", GS3: "--gs3", GS4: "--gs4", Prelims: "--pre" };
+function donut(parts, total, label) {
+  const R = 52, C = 2 * Math.PI * R; let off = 0;
+  const segs = parts.filter((p) => p.n).map((p) => {
+    const len = (p.n / total) * C; const s = `<circle r="${R}" cx="70" cy="70" fill="none" stroke="var(${p.color})" stroke-width="22" stroke-dasharray="${len - 2} ${C - len + 2}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"><title>${esc(p.label)}: ${p.n}</title></circle>`;
+    off += len; return s;
+  }).join("");
+  return `<svg viewBox="0 0 140 140" class="donut" role="img" aria-label="${esc(label)}">${segs}
+    <text x="70" y="68" text-anchor="middle" class="d-big">${total}</text><text x="70" y="86" text-anchor="middle" class="d-small">items</text></svg>`;
+}
+function impBar(items) {
+  const c = { High: 0, Medium: 0, Low: 0 }; items.forEach((i) => c[i.importance || "Low"]++);
+  const t = items.length || 1;
+  return `<div class="impbar">${["High", "Medium", "Low"].map((k) => c[k] ? `<span class="seg ${k}" style="flex:${c[k]}" title="${k}: ${c[k]}"></span>` : "").join("")}</div>
+    <div class="implegend">${["High", "Medium", "Low"].map((k) => `<span><i class="sw ${k}"></i>${k} <b>${c[k]}</b> <em>${Math.round((c[k] / t) * 100)}%</em></span>`).join("")}</div>`;
+}
+
+// ---------- Today / Day (tiles) ----------
 async function viewToday(day) {
   await loadOverview();
   day = day || overview.today;
@@ -141,56 +175,70 @@ async function viewToday(day) {
   if (!items.length) {
     view.innerHTML = `<div class="hero"><div><h1>${fmtDay(day)}</h1><p>Notes from PIB and The Hindu, sorted for UPSC CSE.</p></div></div>
       <div class="empty"><h2>${overview.running ? "Fetching today's news…" : "No notes for this day yet"}</h2>
-      <p class="muted">${overview.running ? "This takes a minute or two. The page refreshes by itself." : "News is collected automatically every morning. Tap <b>Update now</b> to fetch it right away."}</p></div>`;
+      <p class="muted">${overview.running ? "This takes a minute or two. The page refreshes by itself." : "News is collected automatically every morning."}</p></div>`;
     return;
   }
-  const count = (f) => items.filter(f).length;
-  const state = { paper: "", stage: "", imp: "", q: "" };
   const secs = sections(items);
-  view.innerHTML = `<div class="hero">
-      <div><h1>${fmtDay(day)}</h1><p>${items.length} UPSC-relevant items from PIB and The Hindu, grouped by subject and importance.</p></div>
-      <div class="hero-actions">
-        <a class="btn primary" href="${pdfUrl(day)}" download>⬇ Download PDF</a>
-        <button class="btn" id="aiBtn">✦ AI notes with my key</button>
-      </div></div>
-    <div class="stats">
-      <div class="stat hi"><b>${count((i) => i.importance === "High")}</b><span>High importance</span></div>
-      <div class="stat"><b>${count((i) => i.stage !== "Mains")}</b><span>Prelims</span></div>
-      <div class="stat"><b>${count((i) => i.stage !== "Prelims")}</b><span>Mains</span></div>
-      ${["GS1", "GS2", "GS3", "GS4"].map((p) => `<div class="stat"><b>${count((i) => i.papers.includes(p))}</b><span>${p}</span></div>`).join("")}
+  const paperCount = PAPER_ORDER.map((p) => ({ label: p, color: PAPER_VAR[p], n: items.filter((i) => (i.papers[0] || "Prelims") === p).length }));
+  const must = items.filter((i) => i.importance === "High").slice(0, 8);
+  const statics = items.filter((i) => (i.notes?.static || []).length).length;
+  view.innerHTML = `
+    <div class="hero glance">
+      <div class="glance-text">
+        <div class="eyebrow">${day === overview.today ? "Today's edition" : "Edition"}</div>
+        <h1>${fmtDay(day)}</h1>
+        <p>${items.length} UPSC-relevant stories from PIB and The Hindu, sorted into ${secs.length} subjects.</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="${pdfUrl(day)}" download>⬇ Today's PDF</a>
+          <button class="btn" id="aiBtn">✦ AI notes with my key</button>
+        </div>
+      </div>
+      <div class="glance-figs card">
+        <div class="fig">${donut(paperCount, items.length, "Stories by GS paper")}
+          <div class="fig-legend">${paperCount.filter((p) => p.n).map((p) => `<span><i class="sw" style="background:var(${p.color})"></i>${p.label} <b>${p.n}</b></span>`).join("")}</div></div>
+        <div class="fig-imp"><div class="lbl">Importance</div>${impBar(items)}
+          <div class="mini-stats"><span>📝 <b>${items.filter((i) => i.stage !== "Mains").length}</b> Prelims</span><span>✍️ <b>${items.filter((i) => i.stage !== "Prelims").length}</b> Mains</span><span>🧱 <b>${statics}</b> static links</span></div></div>
+      </div>
     </div>
-    <div class="toc">${secs.map((s, i) => `<a href="#sec-${i}" data-jump="sec-${i}" class="toc-i"><span class="dot ${s.paper}"></span>${esc(s.subject)} <b>${s.items.length}</b></a>`).join("")}</div>
-    <div class="filters" id="filters">
-      ${["", "High", "Medium"].map((s) => `<button class="chip ${s === "" ? "on" : ""}" data-imp="${s}">${s ? s + "+" : "Any importance"}</button>`).join("")}
-      <span class="sep"></span>
-      ${["", "Prelims", "Mains"].map((s) => `<button class="chip ${s === "" ? "on" : ""}" data-stage="${s}">${s || "Both stages"}</button>`).join("")}
-      <input class="input" id="q" placeholder="Filter by keyword…" type="search">
-    </div>
-    <div id="secs"></div>`;
-  const draw = () => {
-    const keep = (i) => (!state.stage || i.stage === state.stage || i.stage === "Both") &&
-      (!state.imp || RANK[i.importance || "Low"] <= RANK[state.imp]) &&
-      (!state.q || (i.title + i.excerpt + i.topics.join(" ")).toLowerCase().includes(state.q));
-    const html = secs.map((s, idx) => {
-      const f = s.items.filter(keep); if (!f.length) return "";
-      return `<section class="subject" id="sec-${idx}"><div class="subject-h"><span class="dot ${s.paper}"></span><h2>${esc(s.subject)}</h2>
-        <span class="tag ${s.paper}">${s.paper}</span><span class="muted small">${f.length} item${f.length > 1 ? "s" : ""}</span></div>
-        <div class="cards">${f.filter((i) => i.importance !== "Low").map((i) => itemCard(i)).join("")}</div>
-        ${f.some((i) => i.importance === "Low") ? `<div class="also"><div class="lbl">Also in the news</div><ul>${f.filter((i) => i.importance === "Low").map(briefRow).join("")}</ul></div>` : ""}</section>`;
-    }).join("");
-    $("#secs").innerHTML = html || `<div class="empty"><p class="muted">Nothing matches these filters.</p></div>`;
-  };
-  $("#filters").addEventListener("click", (e) => {
-    const b = e.target.closest(".chip"); if (!b) return;
-    const key = "imp" in b.dataset ? "imp" : "stage";
-    state[key] = b.dataset[key];
-    document.querySelectorAll(`[data-${key}]`).forEach((x) => x.classList.toggle("on", x === b));
-    draw();
-  });
-  $(".toc").addEventListener("click", (e) => { const a = e.target.closest("[data-jump]"); if (!a) return; e.preventDefault(); document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
-  $("#q").addEventListener("input", (e) => { state.q = e.target.value.toLowerCase(); draw(); });
+    ${must.length ? `<h2 class="row-h">🔥 Must read today</h2>
+    <div class="must">${must.map((i) => { const s = i.topics[0] || "Other"; const p = (SUBJECT_META[s] || [0, i.papers[0] || "Prelims"])[1];
+      return `<a class="must-tile p-${p}" href="#/subject/${day}/${encodeURIComponent(s)}/${i.id}"><span class="mt-icon">${subjIcon(s)}</span><span class="mt-sub">${esc(s)}</span><b>${esc(i.title)}</b><span class="mt-src">${esc(i.source)}</span></a>`; }).join("")}</div>` : ""}
+    <h2 class="row-h">📚 Learn by subject</h2>
+    <div class="tiles">${secs.map((s) => `
+      <a class="tile p-${s.paper}" href="#/subject/${day}/${encodeURIComponent(s.subject)}">
+        <span class="t-icon">${subjIcon(s.subject)}</span>
+        <span class="t-paper">${s.paper}</span>
+        <span class="t-name">${esc(s.subject)}</span>
+        <span class="t-count"><b>${s.items.length}</b> ${s.items.length > 1 ? "stories" : "story"}</span>
+        ${s.high ? `<span class="t-hot">🔥 ${s.high} high</span>` : ""}
+        <span class="t-peek">${esc(s.items[0].title)}</span>
+      </a>`).join("")}</div>`;
   $("#aiBtn").onclick = () => runAiNotes(day);
-  draw();
+}
+
+async function viewSubject(day, subject, focusId) {
+  await loadOverview();
+  subject = decodeURIComponent(subject || "");
+  const data = await api(`/api/day/${day}`);
+  const sec = sections(data.items).find((s) => s.subject === subject);
+  $("#crumb").textContent = subject;
+  if (!sec) { view.innerHTML = `<div class="empty"><p class="muted">Nothing here.</p></div>`; return; }
+  const all = sections(data.items);
+  const idx = all.findIndex((s) => s.subject === subject);
+  const prev = all[idx - 1], next = all[idx + 1];
+  const full = sec.items.filter((i) => i.importance !== "Low"), low = sec.items.filter((i) => i.importance === "Low");
+  view.innerHTML = `
+    <div class="subj-hero p-${sec.paper}">
+      <a class="back" href="#/day/${day}">← ${fmtDay(day, { day: "numeric", month: "short" })}</a>
+      <div class="sh-row"><span class="sh-icon">${subjIcon(subject)}</span>
+        <div><div class="eyebrow">${sec.paper} · ${esc(PAPER_NAME[sec.paper] || "")}</div><h1>${esc(subject)}</h1>
+        <p>${sec.items.length} ${sec.items.length > 1 ? "stories" : "story"}${sec.high ? ` · ${sec.high} high importance` : ""}</p></div></div>
+    </div>
+    <div class="cards">${full.map((i) => itemCard(i)).join("")}</div>
+    ${low.length ? `<div class="also"><div class="lbl">Also in the news</div><ul>${low.map(briefRow).join("")}</ul></div>` : ""}
+    <div class="pager">${prev ? `<a class="btn" href="#/subject/${day}/${encodeURIComponent(prev.subject)}">← ${subjIcon(prev.subject)} ${esc(prev.subject)}</a>` : "<span></span>"}
+      ${next ? `<a class="btn primary" href="#/subject/${day}/${encodeURIComponent(next.subject)}">${subjIcon(next.subject)} ${esc(next.subject)} →</a>` : ""}</div>`;
+  if (focusId) setTimeout(() => document.querySelector(`.card[data-id="${focusId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
 }
 
 async function runAiNotes(day) {

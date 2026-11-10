@@ -122,6 +122,11 @@ def build_pdf(day: str, items: list, out_dir=None) -> str:
             if n.get("prelims"):
                 block.append(_p("Prelims pointers", "label"))
                 block += _bullets(n["prelims"] if isinstance(n["prelims"], list) else [n["prelims"]])
+            for st in (n.get("static") or []):
+                block.append(_p(f"Static connect: {st.get('title', '')}", "label"))
+                block += _bullets(st.get("facts") or [])
+                if st.get("upsc"):
+                    block.append(_p(f"UPSC angle: {st['upsc']}", "q"))
             if n.get("mains"):
                 block.append(_p("Mains angle", "label"))
                 block.append(_p(n["mains"]))
