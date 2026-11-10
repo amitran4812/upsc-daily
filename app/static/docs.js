@@ -89,8 +89,8 @@ Return ONLY JSON with this shape:
  "prelims_facts": ["numbers, names, dates, definitions worth remembering"],
  "mains_angles": ["how this can be used in a Mains answer, one line each"],
  "static_connect": [{"title": "related static topic", "facts": ["1 to 3 short facts"]}],
- "mcqs": [{"question": "UPSC Prelims style question", "options": ["a","b","c","d"], "answer": 0, "explanation": "why, citing the document"}],
- "mains_questions": [{"question": "UPSC Mains style question", "paper": "GS2", "hint": "points to cover"}]}
+ "mcqs": [{"question": "UPSC Prelims style question", "options": ["a","b","c","d"], "answer": 0, "explanation": "why, citing the document", "ref": {"where": "page number or section heading where the answer is", "quote": "exact short quote from the document, at most 25 words"}}],
+ "mains_questions": [{"question": "UPSC Mains style question", "paper": "GS2", "hint": "points to cover", "ref": {"where": "page or section", "quote": "short quote"}}]}
 Rules: 2 to 4 angles, only dimensions that really apply. 6 to 12 key points ordered by importance. Up to 6 prelims facts. Up to 4 Mains angles. 0 to 2 static connects.
 Questions must come from the document's content. Write up to 5 MCQs and up to 2 Mains questions, fewer if the document is short or has little UPSC value. Do not pad with filler.
 "answer" is the 0-based index of the correct option. If the document has nothing useful for UPSC, say so in the summary and keep the lists short.`;
@@ -193,6 +193,20 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     saveDoc(doc);
     return doc;
   }
+  const ref = (x) => (x && typeof x === "object" && (x.where || x.quote) ? { where: String(x.where || "").slice(0, 80), quote: String(x.quote || "").slice(0, 240) } : null);
+  // Reference block for a question from a saved document (used here and in the monthly quiz)
+  function docRefHtml(d, q) {
+    const r = q.ref || {};
+    return `<a class="rv-src" href="#/docs/${e$(d.id)}">📄 <span><b>${e$(d.title || d.name)}</b><span class="muted small">Your document · ${e$(d.name)}${r.where ? " · " + e$(r.where) : ""}</span>${r.quote ? `<span class="rv-quote">“${e$(r.quote)}”</span>` : ""}</span></a>`;
+  }
+  // Questions from documents saved in a given month, for the monthly quiz (max 10, spread across documents)
+  function monthQuestions(month, max = 10) {
+    const docs = listDocs().filter((d) => (d.added_at || "").startsWith(month) && d.mcqs.length);
+    const out = [];
+    for (let round = 0; out.length < max && docs.some((d) => d.mcqs[round]); round++)
+      for (const d of docs) if (d.mcqs[round] && out.length < max) out.push({ ...d.mcqs[round], doc: { id: d.id, title: d.title, name: d.name }, srcHtml: docRefHtml(d, d.mcqs[round]) });
+    return out;
+  }
   function sanitize(r) {
     const arr = (x) => (Array.isArray(x) ? x : []);
     return {
@@ -204,8 +218,8 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       mains_angles: arr(r.mains_angles).slice(0, 5).map(String),
       static_connect: arr(r.static_connect).slice(0, 3).map((s) => ({ title: String(s.title || ""), facts: arr(s.facts).slice(0, 4).map(String) })),
       mcqs: arr(r.mcqs).filter((q) => q && Array.isArray(q.options) && q.options.length >= 2).slice(0, 8)
-        .map((q) => ({ question: String(q.question || ""), options: q.options.slice(0, 4).map(String), answer: Math.max(0, Math.min(3, +q.answer || 0)), explanation: String(q.explanation || "") })),
-      mains_questions: arr(r.mains_questions).slice(0, 3).map((q) => ({ question: String(q.question || q), paper: String(q.paper || ""), hint: String(q.hint || "") })),
+        .map((q) => ({ question: String(q.question || ""), options: q.options.slice(0, 4).map(String), answer: Math.max(0, Math.min(3, +q.answer || 0)), explanation: String(q.explanation || ""), ref: ref(q.ref) })),
+      mains_questions: arr(r.mains_questions).slice(0, 3).map((q) => ({ question: String(q.question || q), paper: String(q.paper || ""), hint: String(q.hint || ""), ref: ref(q.ref) })),
     };
   }
 
@@ -213,6 +227,31 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
   const KIND_ICON = { pdf: "📕", docx: "📘", text: "📄", image: "🖼️" };
   const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
   const fmtDate = (s) => new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const fmtWhen = (s) => new Date(s).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const dayKey = (s) => { const d = new Date(s); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  function groupLabel(s) {
+    const d = new Date(s), t = new Date(); t.setHours(0, 0, 0, 0);
+    const days = Math.round((t - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+    if (days <= 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return "Earlier this week";
+    return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  }
+  const SORTS = { new: "Newest first", old: "Oldest first", az: "A to Z" };
+  let sortBy = (() => { try { return localStorage.getItem("upsc:docs_sort") || "new"; } catch { return "new"; } })();
+  const docTile = (d) => `<a class="doc-tile" href="#/docs/${d.id}">
+        <span class="doc-ico">${KIND_ICON[d.kind] || "📄"}</span>
+        <b>${e$(d.title || d.name)}</b>
+        <span class="up-date">⬆ Uploaded ${fmtWhen(d.added_at)}</span>
+        ${d.doc_type ? `<span class="muted small">${e$(d.doc_type)}</span>` : ""}
+        <span class="doc-meta"><span>${d.key_points.length} points</span>${d.mcqs.length ? `<span>${d.mcqs.length} MCQs</span>` : ""}${d.mains_questions.length ? `<span>${d.mains_questions.length} Mains</span>` : ""}</span></a>`;
+  function savedList(docs) {
+    const sorted = [...docs].sort((a, b) => sortBy === "az" ? (a.title || a.name).localeCompare(b.title || b.name)
+      : sortBy === "old" ? (a.added_at || "").localeCompare(b.added_at || "") : (b.added_at || "").localeCompare(a.added_at || ""));
+    if (sortBy === "az") return `<div class="doc-grid">${sorted.map(docTile).join("")}</div>`;
+    const groups = []; for (const d of sorted) { const g = groupLabel(d.added_at); if (!groups.length || groups.at(-1)[0] !== g) groups.push([g, []]); groups.at(-1)[1].push(d); }
+    return groups.map(([g, ds]) => `<h3 class="date-group">${e$(g)} <span class="muted small">${ds.length} document${ds.length > 1 ? "s" : ""}</span></h3><div class="doc-grid">${ds.map(docTile).join("")}</div>`).join("");
+  }
 
   function viewList() {
     document.querySelector("#crumb").textContent = "My documents";
@@ -226,13 +265,25 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     </label>
     <p class="muted small reader-line">Read by: <b>${e$(LABEL[ai.p])}</b>${ai.p === "none" ? ` · <a href="#/settings">Add a free Gemini key</a> for full notes, scanned PDFs and questions.` : ai.p === "gemini" ? "" : ` · Gemini is used first whenever a Gemini key is saved.`}</p>
     <div id="dzStatus" class="dz-status" hidden></div>
-    ${docs.length ? `<h2 class="h2s">Saved (${docs.length})</h2><div class="doc-grid">${docs.map((d) => `<a class="doc-tile" href="#/docs/${d.id}">
-        <span class="doc-ico">${KIND_ICON[d.kind] || "📄"}</span>
-        <b>${e$(d.title || d.name)}</b>
-        <span class="muted small">${e$(d.doc_type || "")}${d.doc_type ? " · " : ""}${fmtDate(d.added_at)}</span>
-        <span class="doc-meta"><span>${d.key_points.length} points</span>${d.mcqs.length ? `<span>${d.mcqs.length} MCQs</span>` : ""}${d.mains_questions.length ? `<span>${d.mains_questions.length} Mains</span>` : ""}</span></a>`).join("")}</div>`
+    ${docs.length ? `<div class="saved-head"><h2 class="h2s">Saved (${docs.length})</h2>
+        <input class="input" id="docSearch" type="search" placeholder="Search by name or date, e.g. budget, 10 Nov">
+        <div class="radio" id="docSort">${Object.entries(SORTS).map(([k, l]) => `<button class="chip ${k === sortBy ? "on" : ""}" data-s="${k}">${l}</button>`).join("")}</div></div>
+      <div id="savedList">${savedList(docs)}</div>`
       : `<div class="empty"><h2>No documents yet</h2><p class="muted">Try a PIB backgrounder, an Economic Survey chapter, a committee report or your own notes.</p></div>`}`;
     const inp = document.querySelector("#docFile"), st = document.querySelector("#dzStatus");
+    const ss = document.querySelector("#docSearch"), sl = document.querySelector("#savedList");
+    const redraw = () => {
+      const q = (ss.value || "").trim().toLowerCase();
+      const hit = docs.filter((d) => !q || `${d.title} ${d.name} ${d.doc_type} ${fmtWhen(d.added_at)} ${dayKey(d.added_at)}`.toLowerCase().includes(q));
+      sl.innerHTML = hit.length ? savedList(hit) : `<p class="muted">No document matches “${e$(q)}”.</p>`;
+    };
+    if (ss) {
+      ss.oninput = redraw;
+      document.querySelectorAll("#docSort .chip").forEach((b) => (b.onclick = () => {
+        sortBy = b.dataset.s; try { localStorage.setItem("upsc:docs_sort", sortBy); } catch {}
+        document.querySelectorAll("#docSort .chip").forEach((x) => x.classList.toggle("on", x === b)); redraw();
+      }));
+    }
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
       st.hidden = false;
@@ -268,7 +319,7 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     v.innerHTML = `<div class="doc-hero">
       <a href="#/docs" class="small">← My documents</a>
       <h1>${KIND_ICON[d.kind] || "📄"} ${e$(d.title || d.name)}</h1>
-      <p class="muted small">${e$(d.name)} · ${fmtSize(d.size)}${d.pages ? ` · ${d.pages} pages` : ""} · saved ${fmtDate(d.added_at)} · read by ${e$(LABEL[d.reader] || d.reader)}</p>
+      <p class="muted small">${e$(d.name)} · ${fmtSize(d.size)}${d.pages ? ` · ${d.pages} pages` : ""} · uploaded ${fmtWhen(d.added_at)}${d.analysed_at && d.analysed_at.slice(0, 16) !== (d.added_at || "").slice(0, 16) ? ` · analysed again ${fmtWhen(d.analysed_at)}` : ""} · read by ${e$(LABEL[d.reader] || d.reader)}</p>
       <div class="row-btns">${hasFile ? `<button class="btn primary" id="reAnalyse">✦ Analyze again</button><button class="btn" id="openOrig">Open original</button>` : `<span class="muted small">The original file is on the device it was uploaded from.</span>`}
         <button class="btn ghost" id="delDoc">Delete</button></div></div>
     <div class="doc-stats">
@@ -292,9 +343,9 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     ${d.mcqs.length || d.mains_questions.length ? `<section class="doc-sec" data-sec="Practice"><h2 class="h2s">✎ Practice</h2>
       <div id="dqs">${d.mcqs.map((q, i) => `<div class="card question" data-i="${i}"><div class="qt">${i + 1}. ${e$(q.question)}</div>
         ${q.options.map((o, j) => `<button class="opt" data-j="${j}">(${"abcd"[j]}) ${e$(o)}</button>`).join("")}
-        <div class="explain" hidden></div></div>`).join("")}</div>
+        <div class="review" hidden></div></div>`).join("")}</div>
       ${d.mains_questions.map((q) => `<div class="card question"><div class="qt">${q.paper ? `<span class="paper-tag">${e$(q.paper)}</span> ` : ""}${e$(q.question)}</div>
-        ${q.hint ? `<details><summary class="small">Points to cover</summary><p class="small">${e$(q.hint)}</p></details>` : ""}</div>`).join("")}</section>` : ""}`;
+        ${q.hint || q.ref ? `<details><summary class="small">Points to cover and reference</summary>${q.hint ? `<p class="small">${e$(q.hint)}</p>` : ""}${q.ref ? `<div class="rv-ref">${docRefHtml(d, q)}</div>` : ""}</details>` : ""}</div>`).join("")}</section>` : ""}`;
     v.querySelectorAll("[data-jump]").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); v.querySelector(`[data-sec="${a.dataset.jump}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }));
     const qs = v.querySelector("#dqs");
     if (qs) qs.addEventListener("click", (ev) => {
@@ -302,7 +353,8 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       const card = b.closest(".question"); if (card.dataset.done) return;
       const q = d.mcqs[+card.dataset.i]; card.dataset.done = 1;
       card.querySelectorAll(".opt").forEach((o, j) => { if (j === q.answer) o.classList.add("right"); else if (o === b) o.classList.add("wrong"); });
-      const ex = card.querySelector(".explain"); ex.textContent = (+b.dataset.j === q.answer ? "Correct. " : "Not quite. ") + q.explanation; ex.hidden = false;
+      const rv = card.querySelector(".review"); rv.innerHTML = window.reviewHtml(q, +b.dataset.j, docRefHtml(d, q)); rv.hidden = false;
+      card.classList.add(+b.dataset.j === q.answer ? "got" : "missed");
     });
     const op = v.querySelector("#openOrig");
     if (op) op.onclick = async () => {
@@ -320,6 +372,6 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     v.querySelector("#delDoc").onclick = async () => { if (!confirm("Delete this document and its notes?")) return; await deleteDoc(id); location.hash = "#/docs"; };
   }
 
-  window.DOCS = { view: (id) => (id ? viewDoc(id) : viewList()), list: listDocs };
+  window.DOCS = { view: (id) => (id ? viewDoc(id) : viewList()), list: listDocs, monthQuestions };
   window.addEventListener("upsc-synced", () => { if (location.hash === "#/docs" && !document.querySelector(".dropzone.busy")) window.DOCS.view(); });
 })();

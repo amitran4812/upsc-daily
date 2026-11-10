@@ -375,10 +375,17 @@ async function viewQuiz(month) {
   if (month) return takeQuiz(month);
   const qs = await api("/api/quizzes");
   const thisMonth = (overview?.today || new Date().toISOString()).slice(0, 7);
-  view.innerHTML = `<div class="hero"><div><h1>Monthly quiz</h1><p>A Prelims-style quiz on last month's current affairs is published on the 1st of every month. You'll get a notification when it's ready.</p></div>
+  // add months where only the user's own documents have questions so far
+  const months = new Set(qs.map((q) => q.month));
+  const ownMonths = [...new Set((window.DOCS?.list() || []).map((d) => (d.added_at || "").slice(0, 7)))].filter((m) => m && !months.has(m));
+  const best0 = STATIC ? (JSON.parse(localStorage.getItem("upsc:quiz_best") || "{}")) : {};
+  for (const m of ownMonths) { const n = window.DOCS.monthQuestions(m).length; if (n) qs.push({ month: m, count: 0, own: n, ownOnly: true, best: best0[m] || null }); }
+  qs.forEach((q) => { if (!q.ownOnly) q.own = window.DOCS?.monthQuestions(q.month).length || 0; });
+  qs.sort((a, b) => b.month.localeCompare(a.month));
+  view.innerHTML = `<div class="hero"><div><h1>Monthly quiz</h1><p>A Prelims-style quiz on last month's current affairs is published on the 1st of every month, plus questions from the documents you analysed that month. After you submit, every question shows the correct answer, an explanation and the source it came from.</p></div>
     ${STATIC ? "" : `<button class="btn" id="genNow">Make a quiz for ${monthLabel(thisMonth)} so far</button>`}</div>
     ${qs.length ? `<div class="quiz-list">${qs.map((q) => `<div class="card qcard"><h3>${monthLabel(q.month)}</h3>
-      <span class="muted small">${q.count} questions · ${q.ai ? "written by AI" : "auto-generated"}</span>
+      <span class="muted small">${q.ownOnly ? `${q.own} questions from your documents so far · the news quiz is added on the 1st` : `${q.count + (q.own || 0)} questions · ${q.count} from the news${q.own ? ` + ${q.own} from your documents` : ""}`}</span>
       <span class="small">${q.best ? `Your best: <b>${q.best.score}/${q.best.total}</b>` : "Not attempted yet"}</span>
       <a class="btn primary" href="#/quiz/${q.month}">${q.best ? "Retake" : "Start quiz"}</a></div>`).join("")}</div>`
       : `<div class="empty"><h2>No quizzes yet</h2><p class="muted">Quizzes are built from the saved notes. Once there are a few days of notes, try the button above.</p></div>`}`;
@@ -392,12 +399,16 @@ async function viewQuiz(month) {
   };
 }
 async function takeQuiz(month) {
-  const quiz = await api(`/api/quiz/${month}`);
+  const base = await api(`/api/quiz/${month}`).catch(() => ({ month, questions: [] }));
+  const own = window.DOCS?.monthQuestions(month) || [];
+  const nBase = base.questions.length;
+  const quiz = { ...base, questions: [...base.questions, ...own] };
+  if (!quiz.questions.length) { view.innerHTML = `<div class="empty"><h2>No quiz for ${monthLabel(month)} yet</h2><p><a href="#/quiz">All quizzes</a></p></div>`; return; }
   const answers = Array(quiz.questions.length).fill(null);
-  view.innerHTML = `<div class="hero"><div><h1>${monthLabel(month)} quiz</h1><p>${quiz.questions.length} questions. Pick one option per question, then submit.</p></div><a class="btn" href="#/quiz">← All quizzes</a></div>
-    <div id="qs">${quiz.questions.map((q, i) => `<div class="card question" data-i="${i}"><div class="qt">${i + 1}. ${esc(q.question)}</div>
+  view.innerHTML = `<div class="hero"><div><h1>${monthLabel(month)} quiz</h1><p>${quiz.questions.length} questions${own.length ? ` (${nBase} from the month's news, ${own.length} from your documents)` : ""}. Pick one option per question, then submit to see every answer with its source.</p></div><a class="btn" href="#/quiz">← All quizzes</a></div>
+    <div id="qs">${quiz.questions.map((q, i) => `<div class="card question" data-i="${i}">${i === nBase && own.length ? `<div class="from-docs">📄 From your documents this month</div>` : ""}<div class="qt">${i + 1}. ${esc(q.question)}</div>
       ${q.options.map((o, j) => `<button class="opt" data-j="${j}">(${"abcd"[j]}) ${esc(o)}</button>`).join("")}
-      <div class="explain" hidden>${esc(q.explanation || "")} ${q.link ? `<a href="${esc(q.link)}" target="_blank" rel="noopener">Source ↗</a>` : ""}</div></div>`).join("")}</div>
+      <div class="review" hidden></div></div>`).join("")}</div>
     <div class="submit-bar"><button class="btn primary" id="submit">Submit answers</button><span id="result"></span></div>`;
   $("#qs").addEventListener("click", (e) => {
     const b = e.target.closest(".opt"); if (!b || $("#qs").dataset.done) return;
@@ -407,17 +418,36 @@ async function takeQuiz(month) {
   $("#submit").onclick = async () => {
     const left = answers.filter((a) => a === null).length;
     if (left && !confirm(`${left} question(s) unanswered. Submit anyway?`)) return;
-    const r = await post(`/api/quiz/${month}/attempt`, { answers });
+    const extra = { score: own.reduce((a, q, k) => a + (answers[nBase + k] === q.answer ? 1 : 0), 0), total: own.length };
+    const r = await post(`/api/quiz/${month}/attempt`, { answers: answers.slice(0, nBase), extra });
     $("#qs").dataset.done = 1;
     document.querySelectorAll(".question").forEach((card, i) => {
       const q = quiz.questions[i];
       card.querySelectorAll(".opt").forEach((o, j) => { if (j === q.answer) o.classList.add("right"); else if (j === answers[i]) o.classList.add("wrong"); });
-      card.querySelector(".explain").hidden = false;
+      const rv = card.querySelector(".review"); rv.innerHTML = reviewHtml(q, answers[i], q.srcHtml); rv.hidden = false;
+      card.classList.add(answers[i] === q.answer ? "got" : "missed");
     });
     $("#submit").hidden = true;
-    $("#result").innerHTML = `<span class="score">${r.score}/${r.total}</span> <span class="muted">Explanations are shown under each question.</span>`;
+    const wrong = answers.filter((a, i) => a !== quiz.questions[i].answer).length;
+    $("#result").innerHTML = `<span class="score">${r.score}/${r.total}</span> <span class="muted">The answer, explanation and source are shown under each question.</span>
+      ${wrong ? `<button class="btn" id="nextWrong">Review ${wrong} missed ↓</button>` : ""}`;
+    let wi = 0;
+    if ($("#nextWrong")) $("#nextWrong").onclick = () => { const m = document.querySelectorAll(".question.missed"); m[wi++ % m.length].scrollIntoView({ behavior: "smooth", block: "center" }); };
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 }
+
+function reviewHtml(q, given, srcHtml) {
+  const L = "abcd", ok = given === q.answer;
+  const s = q.source;
+  const src = srcHtml || (s ? `<a class="rv-src" href="${esc(s.link)}" target="_blank" rel="noopener">📰 <span><b>${esc(s.title)}</b><span class="muted small">${esc(s.source)}${s.section ? " · " + esc(s.section) : ""}${s.day ? " · " + fmtDay(s.day, { day: "numeric", month: "short", year: "numeric" }) : ""} · open ↗</span></span></a>`
+    : q.link ? `<a class="rv-src" href="${esc(q.link)}" target="_blank" rel="noopener">📰 <span><b>Read the source article ↗</b></span></a>` : "");
+  return `<div class="rv-head ${ok ? "ok" : "bad"}">${given == null ? "Not answered" : ok ? "✓ Correct" : `✗ Your answer: (${L[given]}) ${esc(q.options[given])}`}</div>
+    <div class="rv-ans"><b>Answer: (${L[q.answer]})</b> ${esc(q.options[q.answer])}</div>
+    ${q.explanation ? `<div class="rv-exp">${esc(q.explanation)}</div>` : ""}
+    ${src ? `<div class="rv-ref"><span class="lbl">Reference</span>${src}</div>` : ""}`;
+}
+window.reviewHtml = reviewHtml;
 
 // ---------- Settings ----------
 async function viewSettings() {

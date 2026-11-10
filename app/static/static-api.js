@@ -150,9 +150,12 @@
     }
     if (p.match(/^\/api\/quiz\/[\d-]+\/attempt$/)) {
       const m = p.split("/")[3]; const qz = await json(`data/quiz/${m}.json`);
-      const score = qz.questions.reduce((a, x, i) => a + (body.answers[i] === x.answer ? 1 : 0), 0);
-      const best = ls.get("quiz_best", {}); if (!best[m] || best[m].score < score) best[m] = { score, total: qz.questions.length }; ls.set("quiz_best", best);
-      return { score, total: qz.questions.length };
+      // body.extra: questions from the user's own documents that month, scored on the device
+      const qq = qz?.questions || [];
+      const score = qq.reduce((a, x, i) => a + (body.answers[i] === x.answer ? 1 : 0), 0) + (body.extra?.score || 0);
+      const total = qq.length + (body.extra?.total || 0);
+      const best = ls.get("quiz_best", {}); if (!best[m] || best[m].score / best[m].total < score / total) best[m] = { score, total }; ls.set("quiz_best", best);
+      return { score, total };
     }
     if (p === "/api/quiz/generate") return { error: "New quizzes are published automatically on the 1st of each month." };
     if (p.startsWith("/api/quiz/")) { const qz = await json(`data/quiz/${p.split("/").pop()}.json`); if (!qz) throw new Error("No quiz for this month"); return qz; }

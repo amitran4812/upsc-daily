@@ -140,8 +140,16 @@ def main():
     write(SITE / "data" / "all.json", every)
     write(SITE / "data" / "quizzes.json", [{"month": q["month"], "created_at": q["created_at"], "ai": q["ai"],
                                              "count": len(json.loads(q["questions"]))} for q in quizzes])
+    from app.quiz import quiz_source
     for q in quizzes:
-        write(SITE / "data" / "quiz" / f"{q['month']}.json", {"month": q["month"], "ai": q["ai"], "questions": json.loads(q["questions"])})
+        qs = json.loads(q["questions"])
+        with db.conn() as c:                     # add source details to quizzes made before that existed
+            for x in qs:
+                if not x.get("source") and x.get("item_id"):
+                    r = c.execute("SELECT * FROM items WHERE id=?", (x["item_id"],)).fetchone()
+                    if r:
+                        x["source"] = quiz_source(db.row_to_item(r))
+        write(SITE / "data" / "quiz" / f"{q['month']}.json", {"month": q["month"], "ai": q["ai"], "questions": qs})
     write(SITE / "data" / "notifications.json", notes)
     write(SITE / "data" / "meta.json", {"notes_prompt": NOTES_PROMPT})
     shutil.copytree(PDF_DIR, SITE / "pdfs", ignore=shutil.ignore_patterns("users"))

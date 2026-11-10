@@ -18,6 +18,12 @@ Notes:
 """
 
 
+def quiz_source(it):
+    """Where a question came from, shown in the answer review."""
+    return {"title": it["title"], "source": it["source"], "section": it.get("section", ""),
+            "day": it["day"], "link": it["link"]}
+
+
 def month_items(month):
     with db.conn() as c:
         rows = c.execute("SELECT * FROM items WHERE substr(day,1,7)=? ORDER BY score DESC",
@@ -71,9 +77,12 @@ def generate_quiz(month=None, n=15, notify=True, settings=None):
             qs = []
     if not qs:
         qs = _rule_quiz(items, n)
-    links = {i["id"]: i["link"] for i in items}
+    by_id = {i["id"]: i for i in items}
     for q in qs:
-        q["link"] = links.get(q.get("item_id"), "")
+        it = by_id.get(q.get("item_id"))
+        q["link"] = it["link"] if it else ""
+        if it:
+            q["source"] = quiz_source(it)
     with db.conn() as c:
         c.execute("INSERT INTO quizzes(month,created_at,questions,ai) VALUES(?,?,?,?) "
                   "ON CONFLICT(month) DO UPDATE SET created_at=excluded.created_at, "
