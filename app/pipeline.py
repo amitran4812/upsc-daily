@@ -75,10 +75,6 @@ def run_daily(day=None, get=None, feeds=None, fetch=True):
             per_section[i["section"]] = per_section.get(i["section"], 0) + 1
             hindu.append(i)
     fresh = sorted(pib + hindu[: MAX_ITEMS_PER_DAY - len(pib)], key=lambda x: -x["score"])
-    for r in [r for r in raw if r["source"] == "PIB"][:6]:
-        cl = classify(r["title"], r["excerpt"], r["section"], r["source"])
-        log.append(f"  PIB sample: [{r['published'][:16]}] score={cl['score']} stale={_stale(r.get('published'), day)} "
-                   f"{r['title'][:70]} | {r['link'][:60]}")
     log.append(f"PIB: {len([r for r in raw if r['source'] == 'PIB'])} fetched, {len(pib)} kept "
                f"(PIB items with no excerpt: {sum(1 for r in raw if r['source'] == 'PIB' and not r['excerpt'])})")
     if fetch:
