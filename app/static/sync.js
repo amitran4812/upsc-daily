@@ -1,10 +1,10 @@
 // Username sync (Firebase Firestore, no Google sign-in, no password).
-// Saved items and quiz scores are stored under users/{username} and shared by every device that
+// Saved items, quiz scores and My documents notes are stored under users/{username} and shared by every device that
 // uses the same username. AI keys stay on each device. Anyone who knows a username can see that
 // user's saved items and scores; that is acceptable for this internal study app.
 (() => {
   const cfg = window.FIREBASE_CONFIG;
-  const SYNCED = ["bookmarks", "quiz_best"];
+  const SYNCED = ["bookmarks", "quiz_best", "docs", "docs_deleted"];
   const listeners = new Set();
   const lsGet = (k, d) => { try { const v = localStorage.getItem("upsc:" + k); return v ? JSON.parse(v) : d; } catch { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem("upsc:" + k, JSON.stringify(v)); } catch {} };
@@ -21,13 +21,22 @@
     const best = lsGet("quiz_best", {});
     for (const [m, v] of Object.entries(remote.quiz_best || {})) if (!best[m] || best[m].score < v.score) best[m] = v;
     lsSet("quiz_best", best);
+    // My documents: notes, summaries and questions (the original files stay on each device)
+    const gone = new Set([...(lsGet("docs_deleted", [])), ...(remote.docs_deleted || [])]);
+    const docs = new Map();
+    for (const d of [...(lsGet("docs", [])), ...(remote.docs || [])]) if (d && d.id && !gone.has(d.id)) docs.set(d.id, d);
+    lsSet("docs", [...docs.values()]);
+    lsSet("docs_deleted", [...gone].slice(-300));
     applying = false;
   }
   function push() {
     if (!db || !state.user || applying) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => {
-      const o = { bookmarks: lsGet("bookmarks", []), quiz_best: lsGet("quiz_best", {}), updated_at: new Date().toISOString() };
+      // A Firestore document holds up to 1 MB, so only the newest saved documents are synced if there are very many.
+      let docs = lsGet("docs", []).sort((a, b) => (b.added_at || "").localeCompare(a.added_at || ""));
+      while (docs.length && JSON.stringify(docs).length > 800000) docs = docs.slice(0, -1);
+      const o = { bookmarks: lsGet("bookmarks", []), quiz_best: lsGet("quiz_best", {}), docs, docs_deleted: lsGet("docs_deleted", []).slice(-300), updated_at: new Date().toISOString() };
       db.collection("users").doc(state.user).set(o, { merge: true }).catch((e) => { state.error = "Could not sync: " + e.message; notify(); });
     }, 800);
   }

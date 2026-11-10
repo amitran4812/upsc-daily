@@ -78,8 +78,8 @@ def main():
         i["src"] = i["src"].lstrip("/")
     write(SITE / "manifest.webmanifest", man)
     sw = (STATIC / "sw.js").read_text(encoding="utf-8")
-    sw = (sw.replace('["/", "/static/styles.css", "/static/app.js", "/static/icon-192.png", "/manifest.webmanifest"]',
-                     '["./", "static/styles.css", "static/app.js", "static/static-api.js", "static/sync.js", "static/firebase-config.js", "static/icon-192.png", "manifest.webmanifest"]')
+    sw = (sw.replace('["/", "/static/styles.css", "/static/app.js", "/static/docs.js", "/static/icon-192.png", "/manifest.webmanifest"]',
+                     '["./", "static/styles.css", "static/app.js", "static/docs.js", "static/static-api.js", "static/sync.js", "static/firebase-config.js", "static/icon-192.png", "manifest.webmanifest"]')
             .replace('url.pathname.startsWith("/api/pdf/")', 'url.pathname.includes("/pdfs/")')
             .replace('url.pathname.startsWith("/api/")', 'url.pathname.includes("/data/")')
             .replace('(url.pathname.startsWith("/api/day/") || url.pathname === "/api/overview")', 'true')

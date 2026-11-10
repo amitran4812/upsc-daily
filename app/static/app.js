@@ -52,7 +52,7 @@ function setupAuth() {
 }
 
 // ---------- Router ----------
-const routes = { today: viewToday, day: viewToday, subject: viewSubject, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings };
+const routes = { today: viewToday, day: viewToday, subject: viewSubject, archive: viewArchive, explore: viewExplore, saved: () => viewExplore(null, true), quiz: viewQuiz, settings: viewSettings, docs: (id) => window.DOCS.view(id) };
 async function route() {
   const [, name = "today", ...args] = location.hash.split("/");
   const nav = name === "day" || name === "subject" ? "today" : name;
