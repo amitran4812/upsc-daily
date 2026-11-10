@@ -1,11 +1,16 @@
-"""One-off check of which PIB feed variants return English releases (run in GitHub Actions)."""
-import re, httpx, feedparser
+"""One-off check of PIB's English release listing (run in GitHub Actions)."""
+import re, httpx
 UA = {"User-Agent": "UPSC-CA-Portal/1.0 (personal study tool; RSS reader)"}
-for warm in ("https://pib.gov.in/allRel.aspx?reg=3&lang=1", "https://pib.gov.in/index.aspx?reg=3&lang=1",
-             "https://pib.gov.in/allRel.aspx?lang=1&reg=3"):
-    with httpx.Client(headers=UA, follow_redirects=True, timeout=25) as c:
-        r = c.get(warm)
-        print("WARM", warm, r.status_code, dict(c.cookies), re.findall(r'PRID=(\d+)[^>]*>([^<]{10,80})<', r.text)[:2])
-        for l in (1, 2):
-            f = feedparser.parse(c.get(f"https://pib.gov.in/RssMain.aspx?ModId=6&Lang={l}&Regid=3").content)
-            print("  RSS Lang", l, len(f.entries), [e.get("title", "")[:60] for e in f.entries[:2]])
+with httpx.Client(headers=UA, follow_redirects=True, timeout=30) as c:
+    r = c.get("https://pib.gov.in/allRel.aspx?reg=3&lang=1")
+    t = r.text
+    ids = re.findall(r"PRID=(\d+)", t)
+    print("LEN", len(t), "PRIDS", len(ids), len(set(ids)))
+    for m in list(re.finditer(r"PRID=\d+", t))[:4]:
+        print("CTX", repr(t[max(0, m.start() - 200): m.end() + 200]))
+    print("ULS", t.count("<li"), "MINISTRY", t.count("ministry"), t.count("Ministry"))
+    i = t.find("Ministry of")
+    print("MCTX", repr(t[i - 300:i + 600]))
+    p = c.get(f"https://pib.gov.in/PressReleasePage.aspx?PRID={ids[0]}" if ids else "https://pib.gov.in")
+    paras = [re.sub(r"<[^>]+>", " ", x) for x in re.findall(r"<p[^>]*>(.*?)</p>", p.text, re.S)]
+    print("PAGE", p.status_code, [re.sub(r"\s+", " ", x).strip()[:150] for x in paras if len(x) > 80][:2])
