@@ -95,14 +95,17 @@ Rules: 2 to 4 angles, only dimensions that really apply. 6 to 12 key points orde
 Questions must come from the document's content. Write up to 5 MCQs and up to 2 Mains questions, fewer if the document is short or has little UPSC value. Do not pad with filler.
 "answer" is the 0-based index of the correct option. If the document has nothing useful for UPSC, say so in the summary and keep the lists short.`;
 
-  async function callAI(ai, kind, file, buf, text, maxTokens = 8192) {
+  const MAX_TEXT = 100000;   // ~25k tokens: enough for long reports, keeps answers fast
+  async function callAI(ai, kind, file, buf, text, maxTokens = 8192, opts = {}) {
     const mime = kind === "pdf" ? "application/pdf" : file.type || "application/octet-stream";
     const useBinary = (kind === "pdf" || kind === "image") && !text;
-    const textPart = text ? `${PROMPT}\n\nDOCUMENT (${file.name}):\n"""\n${text.slice(0, 180000)}\n"""` : PROMPT;
+    const cut = text.length > MAX_TEXT;
+    const textPart = text ? `${PROMPT}\n\nDOCUMENT (${file.name})${cut ? " — long document, first part only" : ""}:\n"""\n${text.slice(0, MAX_TEXT)}\n"""` : PROMPT;
     let r;
     if (ai.p === "gemini") {
       const parts = useBinary ? [{ inline_data: { mime_type: mime, data: toB64(buf) } }, { text: PROMPT }] : [{ text: textPart }];
-      const j = await window.UPSC_GEMINI.generate(ls.get("settings", {}), { contents: [{ parts }], generationConfig: { maxOutputTokens: 16384, responseMimeType: "application/json" } });
+      const j = await window.UPSC_GEMINI.generate(ls.get("settings", {}), { contents: [{ parts }], generationConfig: { maxOutputTokens: maxTokens, responseMimeType: "application/json" } },
+        { stream: true, onText: opts.onText, signal: opts.signal, idleMs: 90000 });
       const c = j.candidates || [];
       return c.length && c[0].content ? (c[0].content.parts || []).map((x) => x.text || "").join("") : "";
     }
@@ -112,7 +115,7 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
         : textPart;
       r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: {
         "x-api-key": ai.key, "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: ai.model, max_tokens: maxTokens, messages: [{ role: "user", content }] }) });
+        body: JSON.stringify({ model: ai.model, max_tokens: maxTokens, messages: [{ role: "user", content }] }), signal: opts.signal });
       if (!r.ok) throw new Error(`Claude: ${r.status} ${(await r.text()).slice(0, 200)}`);
       return (await r.json()).content.map((b) => b.text || "").join("");
     }
@@ -121,7 +124,7 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
                         : { type: "image_url", image_url: { url: `data:${mime};base64,${toB64(buf)}` } }, { type: "text", text: PROMPT }]
       : textPart;
     r = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { authorization: `Bearer ${ai.key}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: ai.model, max_completion_tokens: maxTokens, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }) });
+      body: JSON.stringify({ model: ai.model, max_completion_tokens: maxTokens, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }), signal: opts.signal });
     if (!r.ok) throw new Error(`ChatGPT: ${r.status} ${(await r.text()).slice(0, 200)}`);
     return (await r.json()).choices[0].message.content || "";
   }
@@ -170,32 +173,45 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     saveDoc(doc);
     return doc;
   }
-  async function analyse(file, onStep, old) {
+  async function analyse(file, onStep, old, opts = {}) {
     if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Please use a file smaller than ${MAX_MB} MB.`);
     const kind = kindOf(file);
     if (kind === "other") throw new Error("Use a PDF, Word (.docx), text file or a photo of a page.");
     const buf = await file.arrayBuffer();
     const ai = pickProvider();
     let text = "", pages = null;
-    // Gemini and Claude read PDFs and photos directly (including scanned pages). Others need the text first.
-    const nativeOk = (kind === "pdf" || kind === "image") && ai.p !== "none" && !(kind === "pdf" && file.size > 14 * 1024 * 1024 && ai.p !== "gemini");
+    // PDFs: pull the text out on the device first (fast) and send only the text. Only scanned PDFs
+    // with no text layer are sent as the file itself, which is much slower to upload and read.
     if (kind === "docx") { onStep("Opening the Word file…"); text = await docxText(buf); }
     else if (kind === "text") text = new TextDecoder().decode(buf);
-    else if (kind === "pdf" && !nativeOk) { onStep("Reading the PDF…"); ({ text, pages } = await pdfText(buf, onStep)); }
-    else if (kind === "image" && ai.p === "none") throw new Error("Reading a photo needs an AI key. Add a free Gemini key in AI & settings.");
-    if (!nativeOk && !text.trim()) throw new Error("No readable text found. If this is a scanned PDF, add a Gemini key in AI & settings so it can read the scan.");
+    else if (kind === "pdf") {
+      onStep("Reading the PDF on this device…");
+      try { ({ text, pages } = await pdfText(buf, onStep)); } catch { text = ""; }
+      if (text.replace(/\s+/g, "").length < 1500) {
+        if (ai.p === "none") throw new Error("This looks like a scanned PDF. Add a free Gemini key in AI & settings so it can read the scan.");
+        text = "";                                // scanned: send the file
+      }
+    } else if (kind === "image" && ai.p === "none") throw new Error("Reading a photo needs an AI key. Add a free Gemini key in AI & settings.");
+    if (!text.trim() && !(kind === "pdf" || kind === "image")) throw new Error("No readable text found in this file.");
 
     let result, used = ai.p;
     if (ai.p === "none") { onStep("Picking out the key points…"); result = basicDigest(text, file.name); }
     else {
-      onStep(`${LABEL[ai.p]} is reading the document… this can take up to a minute.`);
-      try { result = parseJson(await callAI(ai, kind, file, buf, text)); }
+      const t0 = Date.now(), ctl = new AbortController(), LIMIT = 240000;
+      opts.onCancel?.(() => ctl.abort(new Error("cancelled")));
+      const kill = setTimeout(() => ctl.abort(new Error("timeout")), LIMIT);
+      const sec = () => Math.round((Date.now() - t0) / 1000);
+      let chars = 0;
+      const tick = setInterval(() => onStep(chars ? `${LABEL[ai.p]} is writing your notes… ${sec()}s · ${chars.toLocaleString("en-IN")} characters so far`
+        : `${LABEL[ai.p]} is reading ${text ? `the text (${Math.round(Math.min(text.length, MAX_TEXT) / 1000)}k characters)` : "the file"}… ${sec()}s`), 1000);
+      let wake = null; try { wake = await navigator.wakeLock?.request("screen"); } catch {}
+      try { result = parseJson(await callAI(ai, kind, file, buf, text, 8192, { signal: ctl.signal, onText: (n) => (chars = n) })); }
       catch (err) {
-        if (kind !== "pdf" || text) throw err;
-        onStep("Trying again with the PDF's text…");     // e.g. very long PDF: send text instead of the file
-        ({ text, pages } = await pdfText(buf, onStep));
-        result = parseJson(await callAI(ai, kind, file, buf, text));
-      }
+        if (ctl.signal.aborted) throw new Error(ctl.signal.reason?.message === "cancelled" ? "Stopped. Your document is saved; tap Analyze again any time."
+          : `${LABEL[ai.p]} took longer than ${LIMIT / 60000} minutes. Your document is saved; tap Analyze to try again.`);
+        if (err instanceof SyntaxError) throw new Error(`${LABEL[ai.p]}'s answer was cut off. Please tap Analyze again.`);
+        throw err;
+      } finally { clearTimeout(kill); clearInterval(tick); try { wake?.release(); } catch {} }
     }
     const id = old?.id || "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     if (!old) try { await idb("put", id, { name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : ""), blob: new Blob([buf], { type: file.type }) }); } catch {}
@@ -311,12 +327,18 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
       document.querySelector("#pickOther").onclick = () => { inp.value = ""; st.hidden = true; inp.click(); };
       document.querySelector("#goAnalyse").onclick = async () => {
         document.querySelector("#drop").classList.add("busy");
-        st.className = "dz-status"; st.innerHTML = `<span class="spin">⟳</span> <span id="dzMsg">Opening ${e$(f.name)}…</span>`;
+        st.className = "dz-status"; st.innerHTML = `<div class="prog"><span class="spin">⟳</span> <span id="dzMsg">Opening ${e$(f.name)}…</span></div>
+          <div class="prog-bar"><i></i></div><div class="row-btns" style="margin-top:10px"><button class="btn" id="dzCancel">Stop</button></div>
+          <p class="muted small" style="margin:8px 0 0">Your document is already saved in My documents, so nothing is lost if this stops. Keep this screen open until it finishes.</p>`;
+        let saved = null, cancel = null;
+        document.querySelector("#dzCancel").onclick = () => cancel?.();
         try {
-          const d = await analyse(f, (m) => { const x = document.querySelector("#dzMsg"); if (x) x.textContent = m; });
+          saved = await saveOnly(f);                 // keep the file even if the analysis is interrupted
+          const d = await analyse(f, (m) => { const x = document.querySelector("#dzMsg"); if (x) x.textContent = m; }, saved, { onCancel: (fn) => (cancel = fn) });
           location.hash = `#/docs/${d.id}`;
         } catch (err) {
-          st.className = "dz-status err"; st.textContent = err.message;
+          st.className = "dz-status err";
+          st.innerHTML = `${e$(err.message)}${saved ? `<div class="row-btns" style="margin-top:10px"><a class="btn primary" href="#/docs/${saved.id}">Open the saved document</a></div>` : ""}`;
           document.querySelector("#drop").classList.remove("busy"); inp.value = "";
         }
       };
@@ -388,9 +410,15 @@ Questions must come from the document's content. Write up to 5 MCQs and up to 2 
     const re = v.querySelector("#reAnalyse");
     if (re) re.onclick = async () => {
       const label = re.textContent;
-      const f = await idb("get", id); re.disabled = true; re.textContent = "Analysing…";
-      try { await analyse(new File([f.blob], f.name, { type: f.type }), (m) => (re.textContent = m.length > 40 ? "Analysing…" : m), d); viewDoc(id); }
-      catch (err) { alert(err.message); re.disabled = false; re.textContent = label; }
+      const f = await idb("get", id); re.disabled = true;
+      let box = v.querySelector("#anaStatus");
+      if (!box) { box = document.createElement("div"); box.id = "anaStatus"; box.className = "dz-status"; re.closest(".doc-hero").appendChild(box); }
+      let cancel = null;
+      box.className = "dz-status"; box.innerHTML = `<div class="prog"><span class="spin">⟳</span> <span id="anaMsg">Starting…</span></div><div class="prog-bar"><i></i></div>
+        <div class="row-btns" style="margin-top:10px"><button class="btn" id="anaStop">Stop</button></div>`;
+      box.querySelector("#anaStop").onclick = () => cancel?.();
+      try { await analyse(new File([f.blob], f.name, { type: f.type }), (m) => { const x = box.querySelector("#anaMsg"); if (x) x.textContent = m; }, d, { onCancel: (fn) => (cancel = fn) }); viewDoc(id); }
+      catch (err) { box.className = "dz-status err"; box.textContent = err.message; re.disabled = false; re.textContent = label; }
     };
     v.querySelector("#delDoc").onclick = async () => { if (!confirm("Delete this document and its notes?")) return; await deleteDoc(id); location.hash = "#/docs"; };
   }

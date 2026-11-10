@@ -451,3 +451,8 @@ body { overscroll-behavior-y: contain; }
 .reader-doc, .reader-text { width: 100%; max-width: 820px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 26px; line-height: 1.7; font-size: 16px; }
 .reader-text { white-space: pre-wrap; font-family: inherit; }
 .reader-doc img { max-width: 100%; }
+.prog { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.prog-bar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin-top: 10px; }
+.prog-bar i { display: block; height: 100%; width: 35%; border-radius: 99px; background: var(--accent); animation: prog 1.4s ease-in-out infinite; }
+@keyframes prog { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+.doc-hero .dz-status { margin-top: 12px; }

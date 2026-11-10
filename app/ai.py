@@ -51,9 +51,21 @@ def complete(prompt, settings, max_tokens=4096):
         return r.json()["choices"][0]["message"]["content"] or ""
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"maxOutputTokens": max(max_tokens, 8192), "responseMimeType": "application/json"}}
-    go = lambda m: httpx.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-                              timeout=180, headers={"x-goog-api-key": key, "content-type": "application/json"}, json=body)
+    def thinking(m):        # keep thinking short so answers come back fast
+        if "2.5-pro" in m:
+            return None
+        return {"thinkingBudget": 0} if re.search(r"gemini-2\.[05]", m) else {"thinkingLevel": "low"}
+
+    def go(m, think=True):
+        b = json.loads(json.dumps(body))
+        t = thinking(m) if think else None
+        if t:
+            b["generationConfig"]["thinkingConfig"] = t
+        return httpx.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                          timeout=180, headers={"x-goog-api-key": key, "content-type": "application/json"}, json=b)
     r = go(model)
+    if r.status_code == 400 and "thinking" in r.text.lower():
+        r = go(model, think=False)
     if r.status_code in (400, 404):            # model retired: switch to the newest Flash model this key can use
         pick = best_gemini(key)
         if pick and pick != model:

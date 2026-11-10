@@ -52,22 +52,64 @@
     const ok = names.filter((n) => /^gemini-/.test(n) && !bad.test(n)).sort((a, b) => rank(b) - rank(a));
     return ok.find((n) => /flash/.test(n)) || ok[0] || null;
   }
-  async function geminiGenerate(s, body) {
+  // Keep "thinking" short so answers come back fast (Gemini 3 thinks a lot by default).
+  function withThinking(model, body, level) {
+    const b = JSON.parse(JSON.stringify(body)); b.generationConfig = b.generationConfig || {};
+    if (level === "off") delete b.generationConfig.thinkingConfig;
+    else if (/gemini-2\.5-pro/.test(model)) delete b.generationConfig.thinkingConfig;
+    else if (/gemini-2\.[05]/.test(model)) b.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    else b.generationConfig.thinkingConfig = { thinkingLevel: "low" };
+    return b;
+  }
+  // opts: { stream: true, onText(chars), signal, idleMs }
+  async function geminiGenerate(s, body, opts = {}) {
     const key = s.gemini_key; let model = s.gemini_model || PROVIDERS.gemini.model;
     if (!key) throw new Error("No Gemini API key saved");
-    const go = (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST",
-      headers: { "x-goog-api-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
+    let thinking = "auto";
+    const go = (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:${opts.stream ? "streamGenerateContent?alt=sse" : "generateContent"}`, { method: "POST",
+      headers: { "x-goog-api-key": key, "content-type": "application/json" }, body: JSON.stringify(withThinking(m, body, thinking)), signal: opts.signal });
     let r = await go(model);
-    if (r.status === 404 || r.status === 400) {
+    if (r.status === 400) {
       const err = await errText(r);
-      if (r.status === 400 && !/model|not found|not supported/i.test(err)) throw new Error("Gemini: " + err);
+      if (/thinking/i.test(err)) { thinking = "off"; r = await go(model); }
+      else if (!/model|not found|not supported/i.test(err)) throw new Error("Gemini: " + err);
+      else r = { status: 404, ok: false, text: async () => err };
+    }
+    if (r.status === 404) {
+      const err = await errText(r);
       const pick = bestGemini(await geminiModels(key).catch(() => []));
       if (!pick || pick === model) throw new Error("Gemini: " + err);
       model = pick; r = await go(model);
       if (r.ok) { const st = ls.get("settings", {}); st.gemini_model = model; ls.set("settings", st); s.gemini_model = model; }
     }
     if (!r.ok) throw new Error("Gemini: " + (await errText(r)));
-    const j = await r.json(); j._model = model; return j;
+    if (!opts.stream) { const j = await r.json(); j._model = model; return j; }
+    // Streaming: show progress as text arrives; give up if nothing arrives for idleMs.
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "", out = "", finish = "";
+    const idleMs = opts.idleMs || 60000;
+    for (;;) {
+      let timer;
+      const chunk = await Promise.race([reader.read(), new Promise((_, rej) => (timer = setTimeout(() => rej(new Error("Gemini stopped responding. Please tap Analyze again.")), idleMs)))])
+        .finally(() => clearTimeout(timer));
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        try {
+          const j = JSON.parse(line.slice(5));
+          const c = (j.candidates || [])[0];
+          if (c?.content?.parts) for (const p of c.content.parts) if (p.text && !p.thought) out += p.text;
+          if (c?.finishReason) finish = c.finishReason;
+          if (j.error) throw new Error("Gemini: " + (j.error.message || "error"));
+        } catch (e) { if (/^Gemini:/.test(e.message)) throw e; }
+        opts.onText?.(out.length);
+      }
+    }
+    if (!out && finish && finish !== "STOP") throw new Error(`Gemini could not finish (${finish}). Try again, or try a smaller file.`);
+    return { candidates: [{ content: { parts: [{ text: out }] }, finishReason: finish }], _model: model };
   }
   window.UPSC_GEMINI = { generate: geminiGenerate, models: geminiModels, best: bestGemini };
   async function complete(prompt, s, maxTokens = 4096) {
